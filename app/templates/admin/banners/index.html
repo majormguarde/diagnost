@@ -1,0 +1,119 @@
+{% extends "admin/admin_base.html" %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+    <div>
+      <span class="badge neon-border-blue text-white mono mb-2">BANNERS_SYSTEM.CFG</span>
+      <h1 class="h2 m-0 neon-text-blue mono">[ УПРАВЛЕНИЕ БАННЕРАМИ ]</h1>
+    </div>
+    <a href="{{ url_for('admin.banner_edit') }}" class="btn btn-outline-info mono">/добавить_баннер</a>
+  </div>
+
+  <div class="card bg-dark neon-border-blue shadow-lg">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-dark table-hover mb-0 mono small align-middle">
+          <thead class="text-secondary border-secondary border-opacity-25">
+            <tr>
+              <th class="ps-4" style="width: 120px;">ПРЕВЬЮ</th>
+              <th>ЗАГОЛОВОК / ПОДЗАГОЛОВОК</th>
+              <th>ПОРЯДОК</th>
+              <th>СТАТУС</th>
+              <th class="text-end pe-4">ДЕЙСТВИЯ</th>
+            </tr>
+          </thead>
+          <tbody class="border-secondary border-opacity-10">
+            {% for banner in banners %}
+              <tr>
+                <td class="ps-4">
+                  <div class="neon-border-blue p-1 rounded cursor-pointer" style="width: 80px; height: 45px;" 
+                       data-bs-toggle="modal" data-bs-target="#imageViewerModal" 
+                       data-bs-image="{{ url_for('static', filename=banner.image_path) }}" 
+                       data-bs-title="{{ banner.title or 'БЕЗ_ЗАГОЛОВКА.NULL' }}">
+                    <img src="{{ url_for('static', filename=banner.image_path) }}" class="rounded w-100 h-100" style="object-fit: cover; opacity: 0.8;">
+                  </div>
+                </td>
+                <td>
+                  <div class="text-white fw-bold">{{ banner.title or 'БЕЗ_ЗАГОЛОВКА.NULL' }}</div>
+                  <div class="text-secondary smaller">{{ banner.subtitle or '---' }}</div>
+                </td>
+                <td class="text-info">{{ banner.order }}</td>
+                <td>
+                  <span class="badge border {{ 'border-success text-success bg-success' if banner.is_active else 'border-secondary text-secondary bg-secondary' }} bg-opacity-10 border-opacity-25">
+                    {{ "АКТИВЕН" if banner.is_active else "ЧЕРНОВИК" }}
+                  </span>
+                </td>
+                <td class="text-end pe-4">
+                  <div class="btn-group btn-group-sm">
+                    <a href="{{ url_for('admin.banner_edit', banner_id=banner.id) }}" class="btn btn-outline-info">
+                      <i class="bi bi-pencil"></i>
+                    </a>
+                    <form action="{{ url_for('admin.banner_delete', banner_id=banner.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Удалить этот баннер?')">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" class="btn btn-outline-danger">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="5" class="text-center py-5 text-secondary">
+                  <i class="bi bi-image fs-1 d-block mb-3 opacity-25"></i>
+                  <span class="text-secondary">БАННЕРЫ_ОТСУТСТВУЮТ.NULL</span>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Image Viewer Modal -->
+<div class="modal fade" id="imageViewerModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content bg-dark neon-border-blue border-opacity-50">
+      <div class="modal-header border-0 pb-0">
+        <h6 class="modal-title mono text-secondary small" id="imageViewerTitle">BANNER_VIEWER.EXE</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-2 text-center">
+        <img src="" id="imageViewerContent" class="img-fluid rounded border border-secondary border-opacity-25" alt="Full size banner">
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const imageViewerModal = document.getElementById('imageViewerModal');
+  if (imageViewerModal) {
+    imageViewerModal.addEventListener('show.bs.modal', function(event) {
+      const button = event.relatedTarget;
+      const imageUrl = button.getAttribute('data-bs-image');
+      const filename = button.getAttribute('data-bs-title');
+      
+      const modalImage = imageViewerModal.querySelector('#imageViewerContent');
+      const modalTitle = imageViewerModal.querySelector('#imageViewerTitle');
+      
+      modalImage.src = imageUrl;
+      modalTitle.textContent = `VIEWING: ${filename}`;
+    });
+  }
+});
+</script>
+
+<style>
+.cursor-pointer {
+  cursor: pointer;
+}
+.neon-border-blue:hover {
+  border-color: #00f2ff !important;
+  box-shadow: 0 0 10px rgba(0, 242, 255, 0.5);
+  transition: all 0.3s ease;
+}
+</style>
+{% endblock %}

@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% set seo_title = "Специализация и цены — " ~ org_settings.name %}
+{% set seo_description = "Каталог специализаций: диагностика, автоэлектрика и ремонт. Смотрите длительность и ориентир по стоимости, записывайтесь онлайн." %}
+{% set seo_keywords = "специализация автосервиса, цены на диагностику, ремонт автоэлектрики" %}
+{% set seo_canonical = url_for('public.services', _external=True) %}
+
+{% block head_extra %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ItemList",
+  "name": "Услуги автосервиса {{ org_settings.name }}",
+  "url": "{{ url_for('public.services', _external=True) }}",
+  "numberOfItems": {{ works|length }},
+  "itemListElement": [
+    {% for work in works %}
+    {
+      "@type": "ListItem",
+      "position": {{ loop.index }},
+      "item": {
+        "@type": "Service",
+        "name": {{ work.title|tojson }},
+        "description": {{ (work.description or "Точная диагностика и ремонт с документированием результата.")|tojson }},
+        "serviceType": {{ (work.category.title if work.category else "Автосервис")|tojson }},
+        "provider": {
+          "@type": "AutoRepair",
+          "name": {{ org_settings.name|tojson }},
+          "url": {{ url_for('public.index', _external=True)|tojson }}
+        },
+        "offers": {
+          "@type": "Offer",
+          "priceCurrency": "RUB",
+          "price": {{ (work.base_price or 0)|tojson }}
+        }
+      }
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+  ]
+}
+</script>
+{% endblock %}
+
+{% block content %}
+<section class="py-5 scanline-container">
+  <div class="container">
+    <div class="text-center mb-5">
+      <span class="badge badge-tech mb-3 mono">ПРОТОКОЛЫ_ОБСЛУЖИВАНИЯ</span>
+      <h1 class="section-title mono">ВОЗМОЖНОСТИ.EXE</h1>
+      <p class="text-secondary mono">> Инициализация списка доступных операций...<br>> {{ categories_count }} категорий и {{ works|length }} направлений доступны.</p>
+    </div>
+
+    <div class="row g-4 mb-5">
+      <div class="col-md-4">
+        <div class="feature-card h-100 text-center p-4">
+          <h3 class="neon-text-blue mono mb-2">{{ works|length }}</h3>
+          <p class="mono small text-secondary mb-0">АКТИВНЫХ_РАБОТ</p>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="feature-card h-100 text-center p-4">
+          <h3 class="neon-text-blue mono mb-2">{{ categories_count }}</h3>
+          <p class="mono small text-secondary mb-0">КАТЕГОРИЙ</p>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="feature-card h-100 text-center p-4">
+          <h3 class="neon-text-blue mono mb-2">24/7</h3>
+          <p class="mono small text-secondary mb-0">ОНЛАЙН_ЗАЯВКА</p>
+        </div>
+      </div>
+    </div>
+
+    {% if works %}
+    <div class="row g-4">
+      {% for category, items in works|groupby('category.title') %}
+      <div class="col-lg-6">
+        <div class="feature-card h-100 p-4">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4 class="mono mb-0">{{ category }}</h4>
+            <span class="badge badge-tech mono">{{ items|length }}</span>
+          </div>
+          <div class="d-flex flex-column gap-3">
+            {% for work in items %}
+            <div class="border border-secondary border-opacity-25 p-3">
+              <div class="d-flex justify-content-between align-items-start gap-3">
+                <div>
+                  <h5 class="mono h6 mb-2">{{ work.title }}</h5>
+                  <p class="mono small text-white opacity-75 mb-0">{{ work.description or "Точная диагностика и ремонт с документированием результата." }}</p>
+                </div>
+                <div class="text-end">
+                  <div class="mono neon-text-blue fw-bold">{{ work.base_price or 0 }} ₽</div>
+                  <div class="mono text-secondary small">{{ work.duration_min }} МИН</div>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="feature-card text-center p-5">
+      <p class="mono text-secondary mb-0">СПИСОК_РАБОТ_ВРЕМЕННО_ПУСТ</p>
+    </div>
+    {% endif %}
+
+    <div class="text-center mt-5">
+      <a href="{{ url_for('booking.step1') }}" class="btn btn-neon btn-lg px-5 mono">[ ОСТАВИТЬ_ЗАЯВКУ.EXE ]</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,85 @@
+{% extends "admin/admin_base.html" %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+    <div>
+      <span class="badge neon-border-blue text-white mono mb-2">MASTER_CONFIGURATION.EXE</span>
+      <h1 class="h2 m-0 neon-text-blue mono">[ {{ "РЕДАКТИРОВАТЬ" if master.id else "ДОБАВИТЬ" }} МАСТЕРА ]</h1>
+    </div>
+    <a href="{{ url_for('admin.masters') }}" class="btn btn-outline-info mono">/назад_к_списку</a>
+  </div>
+
+  <div class="card bg-dark neon-border-blue shadow-lg">
+    <div class="card-body p-4">
+      <form method="POST" class="mono">
+        {{ form.hidden_tag() }}
+        <div class="row">
+          <div class="col-md-6 mb-4">
+            <label class="form-label text-secondary small">> ИМЯ_МАСТЕРА</label>
+            {{ form.name(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Иван Иванов") }}
+            {% for error in form.name.errors %}<span class="text-danger small">{{ error }}</span>{% endfor %}
+          </div>
+          <div class="col-md-6 mb-4">
+            <label class="form-label text-secondary small">> ДОЛЖНОСТЬ</label>
+            {{ form.position(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Ведущий диагност") }}
+            {% for error in form.position.errors %}<span class="text-danger small">{{ error }}</span>{% endfor %}
+          </div>
+          <div class="col-12 mb-4">
+            <label class="form-label text-secondary small">> ОПИСАНИЕ_ПРОФИЛЯ</label>
+            {{ form.description(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", rows=3, placeholder="Опыт работы более 10 лет...") }}
+          </div>
+          <div class="col-md-6 mb-4">
+            <label class="form-label text-secondary small">> ПРОЦЕНТ_ВЫПЛАТ_ОТ_РАБОТ (%)</label>
+            {{ form.payout_percent(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", type="number", min="0", max="100", placeholder="100") }}
+            {% for error in form.payout_percent.errors %}<span class="text-danger small">{{ error }}</span>{% endfor %}
+            <div class="form-text text-secondary smaller">! ПРОЦЕНТ ОТ СТОИМОСТИ РАБОТЫ, КОТОРЫЙ ИДЕТ МАСТЕРУ В НАЧИСЛЕНИЕ.</div>
+          </div>
+          <div class="col-md-6 mb-4 d-flex align-items-center">
+            <div class="form-check">
+              {{ form.is_active(class="form-check-input bg-dark border-secondary") }}
+              <label class="form-check-label text-white fw-bold" for="{{ form.is_active.id }}">
+                {{ form.is_active.label.text | upper }}
+              </label>
+            </div>
+          </div>
+          <div class="col-12 mb-4">
+            <label class="form-label text-secondary small">> СПЕЦИАЛИЗАЦИЯ</label>
+            <div class="border border-secondary border-opacity-25 rounded p-3">
+              <div class="row g-2">
+                {% for value, label in form.competency_ids.choices %}
+                  <div class="col-md-6">
+                    <input
+                      id="competency_{{ value }}"
+                      type="checkbox"
+                      name="{{ form.competency_ids.name }}"
+                      value="{{ value }}"
+                      class="btn-check"
+                      {% if value in (form.competency_ids.data or []) %}checked{% endif %}
+                    >
+                    <label for="competency_{{ value }}" class="btn btn-outline-info w-100 text-start mono small">
+                      {{ label }}
+                    </label>
+                  </div>
+                {% endfor %}
+                {% if not form.competency_ids.choices %}
+                  <div class="col-12 text-secondary smaller">СПИСОК_СПЕЦИАЛИЗАЦИЙ_ПУСТ.NULL</div>
+                {% endif %}
+              </div>
+            </div>
+            <div class="form-text text-secondary smaller mt-2">! ОТМЕТЬТЕ ЧЕКБОКСАМИ НУЖНЫЕ НАПРАВЛЕНИЯ.</div>
+          </div>
+        </div>
+
+        <div class="d-flex gap-3 mt-4">
+          <button type="submit" class="btn btn-info px-5 py-2 mono fw-bold">
+            <i class="bi bi-save me-2"></i>СОХРАНИТЬ.EXE
+          </button>
+          <a href="{{ url_for('admin.masters') }}" class="btn btn-outline-secondary px-4 py-2 mono">
+            ОТМЕНА.SH
+          </a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

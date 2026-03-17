@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% set seo_title = "Вход — " ~ org_settings.name %}
+{% set seo_description = "Авторизация в личном кабинете клиента." %}
+{% set seo_robots = "noindex,nofollow" %}
+{% set seo_canonical = url_for('auth.login', _external=True) %}
+{% block content %}
+  <h1 class="h3 mb-3">Вход</h1>
+  <form method="post" class="card card-body" style="max-width: 520px;">
+    {{ form.hidden_tag() }}
+    <div class="mb-3">
+      {{ form.phone.label(class="form-label") }}
+      {{ form.phone(class="form-control", placeholder="+7...") }}
+    </div>
+    <div class="mb-3">
+      {{ form.password.label(class="form-label") }}
+      {{ form.password(class="form-control") }}
+    </div>
+    {{ form.submit(class="btn btn-primary") }}
+  </form>
+{% endblock %}

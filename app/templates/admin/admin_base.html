@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Админ-панель — {{ title or "Диагностика" }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/main.css') }}" rel="stylesheet">
+    <style>
+      .sidebar {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 100;
+        padding: 48px 0 0;
+        box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1);
+      }
+      .sidebar-sticky {
+        position: relative;
+        top: 0;
+        height: calc(100vh - 48px);
+        padding-top: .5rem;
+        overflow-x: hidden;
+        overflow-y: auto;
+      }
+      .navbar-brand {
+        padding-top: .75rem;
+        padding-bottom: .75rem;
+        background-color: rgba(0, 0, 0, .25);
+        box-shadow: inset -1px 0 0 rgba(0, 0, 0, .25);
+      }
+      .navbar .navbar-toggler {
+        top: .25rem;
+        right: 1rem;
+      }
+      @media print {
+        @page { margin: 1cm; }
+        body { background: white !important; color: black !important; }
+        body::before, body::after { content: none !important; display: none !important; }
+        .sidebar, header, .d-print-none, .navbar { display: none !important; }
+        .btn:not(.accordion-button) { display: none !important; }
+        
+        main { 
+          display: block !important;
+          flex: none !important;
+          max-width: 100% !important;
+          width: 100% !important; 
+          margin: 0 !important; 
+          padding: 0 !important; 
+          background: white !important;
+          color: black !important;
+        }
+        .row {
+          display: block !important;
+          margin: 0 !important;
+        }
+        main * {
+          color: black !important;
+          text-shadow: none !important;
+          filter: none !important;
+        }
+        
+        .collapse:not(.show) { display: block !important; height: auto !important; visibility: visible !important; }
+        .accordion-button { 
+          background: none !important; 
+          border: none !important; 
+          color: black !important; 
+          padding-left: 0 !important;
+          box-shadow: none !important;
+        }
+        .accordion-button::after { display: none !important; }
+ 
+        .table-responsive {
+          overflow: visible !important;
+          display: block !important;
+        }
+
+        .container-fluid {
+          padding: 0 !important;
+          max-width: 100% !important;
+        }
+        .card { 
+          border: 1px solid #000 !important; 
+          box-shadow: none !important; 
+          background: white !important; 
+          color: black !important;
+        }
+        .card-header { 
+          background-color: #eee !important; 
+          color: black !important; 
+          border-bottom: 1px solid #000 !important;
+        }
+        .table { 
+          width: 100% !important; 
+          border-collapse: collapse !important; 
+        }
+        .table th, .table td { 
+          border: 1px solid #000 !important; 
+          color: black !important; 
+          padding: 4px 8px !important; 
+          background: white !important; 
+        }
+        .table-dark { 
+          background: white !important; 
+          color: black !important; 
+          --bs-table-color: black !important;
+          --bs-table-bg: white !important;
+          --bs-table-border-color: #000 !important;
+          --bs-table-striped-color: black !important;
+          --bs-table-striped-bg: #f9f9f9 !important;
+          --bs-table-active-color: black !important;
+          --bs-table-active-bg: #eee !important;
+          --bs-table-hover-color: black !important;
+          --bs-table-hover-bg: #f1f1f1 !important;
+        }
+        .text-white, .text-white-50, .neon-text-blue, .text-info, .text-secondary, .text-success, .text-warning, .text-danger, .card-title, h1, h2, h3, h4, h5, h6 { 
+          color: black !important; 
+        }
+        .bg-dark { 
+          background-color: white !important; 
+        }
+        .bg-transparent {
+          background-color: transparent !important;
+        }
+        .border-secondary, .border-opacity-25, .border-opacity-10, .neon-border-blue, .neon-border-green, .neon-border-red {
+           border-color: #000 !important;
+         }
+         .badge { 
+           border: 1px solid #000 !important; 
+           color: black !important; 
+           background: transparent !important; 
+         }
+       }
+    </style>
+  </head>
+  <body class="bg-dark text-white">
+    <header class="navbar navbar-dark sticky-top bg-dark flex-md-nowrap p-0 shadow border-bottom border-secondary border-opacity-25">
+      <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3 fs-6 neon-text-blue mono" href="{{ url_for('public.index') }}">DIAGNOST.ADMIN</a>
+      <button class="navbar-toggler position-absolute d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu" aria-controls="sidebarMenu" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="navbar-nav w-100 text-end pe-3">
+        <div class="nav-item text-nowrap">
+          <a class="nav-link px-3 mono small text-secondary" href="{{ url_for('auth.logout') }}">ВЫЙТИ ({{ current_user.name | upper }})</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="container-fluid">
+      <div class="row">
+        <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block bg-dark sidebar collapse border-end border-secondary border-opacity-10">
+          <div class="position-sticky pt-3 sidebar-sticky">
+            <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-4 mb-2 text-secondary text-uppercase mono smaller">
+              <span>> ОПЕРАЦИИ</span>
+            </h6>
+            <ul class="nav flex-column mb-3">
+              <li class="nav-item">
+                <a class="nav-link mono small {% if request.endpoint == 'admin.index' %}active neon-text-blue{% endif %}" href="{{ url_for('admin.index') }}">
+                  <i class="bi bi-speedometer2 me-2"></i>ДАШБОРД
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link mono small {% if request.endpoint == 'admin.appointments' or request.endpoint == 'admin.appointment_detail' %}active neon-text-blue{% endif %}" href="{{ url_for('admin.appointments') }}">
+                  <i class="bi bi-calendar-event me-2"></i>ЗАЯВКИ
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link mono small {% if request.endpoint == 'admin.work_orders' or request.endpoint == 'admin.work_order_detail' %}active neon-text-blue{% endif %}" href="{{ url_for('admin.work_orders') }}">
+                  <i class="bi bi-file-earmark-text me-2"></i>ЗАКАЗ-НАРЯДЫ
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link mono small {% if request.endpoint == 'admin.payouts' %}active neon-text-blue{% endif %}" href="{{ url_for('admin.payouts') }}">
+                  <i class="bi bi-wallet2 me-2"></i>ВЕДОМОСТЬ НАЧИСЛЕНИЙ
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link mono small {% if request.endpoint == 'admin.materials_report' %}active neon-text-green{% endif %}" href="{{ url_for('admin.materials_report') }}">
+                  <i class="bi bi-box-seam me-2"></i>ВЕДОМОСТЬ МАТЕРИАЛОВ
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link mono small {% if request.endpoint == 'admin.cash_flow' %}active neon-text-blue{% endif %}" href="{{ url_for('admin.cash_flow') }}">
+                  <i class="bi bi-cash-stack me-2"></i>КНИГА ПРИХОДОВ
+                </a>
+              </li>
+            </ul>
+
+            <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-4 mb-2 text-secondary text-uppercase mono smaller">
+              <span>> СПРАВОЧНИКИ</span>
+            </h6>
+            <ul class="nav flex-column mb-3">
+              <li class="nav-item">
+                <a class="nav-link mono small {% if 'admin.master' in request.endpoint %}active neon-text-blue{% endif %}" href="{{ url_for('admin.masters') }}">
+                  <i class="bi bi-people me-2"></i>МАСТЕРА
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link mono small {% if 'admin.competenc' in request.endpoint %}active neon-text-blue{% endif %}" href="{{ url_for('admin.competencies') }}">
+                  <i class="bi bi-award me-2"></i>СПЕЦИАЛИЗАЦИЯ
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link mono small {% if 'admin.work' in request.endpoint and 'order' not in request.endpoint %}active neon-text-blue{% endif %}" href="{{ url_for('admin.works') }}">
+                  <i class="bi bi-tools me-2"></i>СПЕЦИАЛИЗАЦИЯ
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link mono small {% if 'admin.category' in request.endpoint %}active neon-text-blue{% endif %}" href="{{ url_for('admin.categories') }}">
+                  <i class="bi bi-tags me-2"></i>КАТЕГОРИИ
+                </a>
+              </li>
+            </ul>
+
+            <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-4 mb-2 text-secondary text-uppercase mono smaller">
+              <span>> САЙТ</span>
+            </h6>
+            <ul class="nav flex-column mb-3">
+              <li class="nav-item">
+                <a class="nav-link mono small {% if 'admin.banner' in request.endpoint %}active neon-text-blue{% endif %}" href="{{ url_for('admin.banners') }}">
+                  <i class="bi bi-images me-2"></i>БАННЕРЫ
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link mono small {% if 'admin.review' in request.endpoint %}active neon-text-blue{% endif %}" href="{{ url_for('admin.reviews') }}">
+                  <i class="bi bi-chat-quote me-2"></i>ОТЗЫВЫ
+                </a>
+              </li>
+            </ul>
+
+            <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-4 mb-2 text-secondary text-uppercase mono smaller">
+              <span>> СИСТЕМА</span>
+            </h6>
+            <ul class="nav flex-column mb-3">
+              <li class="nav-item">
+                <a class="nav-link mono small {% if request.endpoint == 'admin.settings' %}active neon-text-blue{% endif %}" href="{{ url_for('admin.settings') }}">
+                  <i class="bi bi-gear me-2"></i>НАСТРОЙКИ
+                </a>
+              </li>
+            </ul>
+
+            <div class="mt-auto px-3 py-4 border-top border-secondary border-opacity-10">
+               <a href="{{ url_for('public.index') }}" class="btn btn-sm btn-outline-info w-100 mono smaller">
+                 <i class="bi bi-arrow-left me-1"></i>НА_САЙТ.SH
+               </a>
+            </div>
+          </div>
+        </nav>
+
+        <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 py-4 bg-dark min-vh-100">
+          {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+              {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                  {{ message }}
+                  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+              {% endfor %}
+            {% endif %}
+          {% endwith %}
+
+          {% block content %}{% endblock %}
+        </main>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  </body>
+</html>

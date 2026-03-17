@@ -1,0 +1,124 @@
+{% extends "admin/admin_base.html" %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+    <div>
+      <span class="badge neon-border-blue text-white mono mb-2">FINANCIAL_REPORTS.EXE</span>
+      <h1 class="h2 m-0 neon-text-blue mono">[ КНИГА ПРИХОДОВ И РАСХОДОВ ]</h1>
+    </div>
+    <div class="d-flex gap-3">
+      <a href="{{ url_for('admin.cash_flow_print', start_date=start_date, end_date=end_date) }}" target="_blank" class="btn btn-sm btn-outline-secondary mono d-print-none">
+        <i class="bi bi-printer me-2"></i>ПЕЧАТЬ.PDF
+      </a>
+      <form class="d-flex gap-2 align-items-end d-print-none">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div>
+          <label class="form-label mono smaller text-secondary">ОТ</label>
+          <input type="date" name="start_date" class="form-control form-control-sm bg-dark text-white border-secondary border-opacity-50 mono" value="{{ start_date }}">
+        </div>
+        <div>
+          <label class="form-label mono smaller text-secondary">ДО</label>
+          <input type="date" name="end_date" class="form-control form-control-sm bg-dark text-white border-secondary border-opacity-50 mono" value="{{ end_date }}">
+        </div>
+        <button type="submit" class="btn btn-sm btn-info mono">ФИЛЬТР.SH</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Статистика -->
+  <div class="row g-4 mb-4">
+    <div class="col-md-4">
+      <div class="card bg-dark neon-border-blue h-100 shadow-lg">
+        <div class="card-body text-center py-4">
+          <div class="text-secondary mono smaller mb-1">ОБЩИЙ ПРИХОД</div>
+          <h2 class="neon-text-blue mono mb-0">{{ total_income }} РУБ.</h2>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card bg-dark border-danger h-100 shadow-lg" style="border-style: dashed; border-width: 1px;">
+        <div class="card-body text-center py-4">
+          <div class="text-secondary mono smaller mb-1">ОБЩИЙ РАСХОД</div>
+          <h2 class="text-danger mono mb-0">{{ total_expense }} РУБ.</h2>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card bg-dark {% if balance >= 0 %}neon-border-green{% else %}border-danger{% endif %} h-100 shadow-lg">
+        <div class="card-body text-center py-4">
+          <div class="text-secondary mono smaller mb-1">ТЕКУЩИЙ БАЛАНС</div>
+          <h2 class="{% if balance >= 0 %}text-success{% else %}text-danger{% endif %} mono mb-0">{{ balance }} РУБ.</h2>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card bg-dark neon-border-blue shadow-lg">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-dark table-hover mb-0 mono small">
+          <thead class="text-secondary border-secondary border-opacity-25">
+            <tr>
+              <th class="ps-4">ДАТА</th>
+              <th>КАТЕГОРИЯ</th>
+              <th>ОПИСАНИЕ</th>
+              <th class="text-end">ПРИХОД</th>
+              <th class="text-end pe-4">РАСХОД</th>
+            </tr>
+          </thead>
+          <tbody class="border-secondary border-opacity-10">
+            {% for entry in entries %}
+            <tr>
+              <td class="ps-4 text-secondary">{{ entry.date.strftime('%d.%m.%Y %H:%M') }}</td>
+              <td>
+                <span class="badge {% if entry.amount > 0 %}bg-info{% else %}bg-danger{% endif %} mono smaller opacity-75">
+                  {{ entry.category | upper }}
+                </span>
+              </td>
+              <td class="text-white-50">
+                {{ entry.description }}
+                {% if entry.work_order_id %}
+                <a href="{{ url_for('admin.work_order_detail', order_id=entry.work_order_id) }}" class="ms-2 text-info text-decoration-none">
+                  [#{{ entry.work_order_id }}]
+                </a>
+                {% endif %}
+              </td>
+              <td class="text-end">
+                {% if entry.amount > 0 %}
+                <span class="neon-text-blue">{{ entry.amount }} РУБ.</span>
+                {% else %}
+                -
+                {% endif %}
+              </td>
+              <td class="text-end pe-4">
+                {% if entry.amount < 0 %}
+                <span class="text-danger">{{ entry.amount | abs }} РУБ.</span>
+                {% else %}
+                -
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+            {% if not entries %}
+            <tr>
+              <td colspan="5" class="text-center py-5 text-secondary">
+                <i class="bi bi-inbox d-block fs-1 mb-2 opacity-25"></i>
+                НЕТ ЗАПИСЕЙ ЗА ВЫБРАННЫЙ ПЕРИОД
+              </td>
+            </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  @media print {
+    .mono { font-family: "Courier New", Courier, monospace !important; }
+    .neon-text-blue { font-weight: bold !important; }
+    .card { page-break-inside: avoid; margin-bottom: 20px !important; }
+  }
+</style>
+{% endblock %}

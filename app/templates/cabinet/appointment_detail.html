@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% set seo_title = "Заявка №" ~ appointment.id ~ " — " ~ org_settings.name %}
+{% set seo_description = "Детали заявки клиента." %}
+{% set seo_robots = "noindex,nofollow" %}
+{% block content %}
+  <h1 class="h3 mb-3">Заявка №{{ appointment.id }}</h1>
+
+  <div class="card card-body mb-3">
+    <div><strong>Мастер:</strong> {{ appointment.master.name if appointment.master else "" }}</div>
+    <div><strong>Начало:</strong> {{ appointment.start_at.strftime("%d.%m.%Y %H:%M") }}</div>
+    <div><strong>Окончание:</strong> {{ appointment.end_at.strftime("%H:%M") }}</div>
+    <div><strong>Статус:</strong> {{ appointment.status }}</div>
+    {% if appointment.comment %}
+      <div class="mt-2"><strong>Комментарий:</strong> {{ appointment.comment }}</div>
+    {% endif %}
+  </div>
+
+  <h2 class="h5 mb-2">Работы</h2>
+  {% if not appointment.items %}
+    <div class="alert alert-secondary">Работы не указаны.</div>
+  {% else %}
+    <ul class="list-group mb-4" style="max-width: 760px;">
+      {% for item in appointment.items %}
+        <li class="list-group-item d-flex justify-content-between">
+          <span>{{ item.work.title }}</span>
+          <span class="text-muted">{{ item.duration_snapshot or item.work.duration_min }} мин</span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if appointment.work_order and appointment.work_order.documents %}
+    <h2 class="h5 mb-3">Фотоотчет и документы</h2>
+    <div class="row g-3 mb-4" style="max-width: 760px;">
+      {% for doc in appointment.work_order.documents %}
+        <div class="col-6 col-md-4">
+          <div class="card h-100 shadow-sm border-0">
+            {% if doc.mime.startswith('image/') %}
+              <a href="#" data-bs-toggle="modal" data-bs-target="#imageViewerModal" data-bs-image="{{ url_for('cabinet.download_document', doc_id=doc.id) }}" data-bs-title="{{ doc.filename }}">
+                <img src="{{ url_for('cabinet.download_document', doc_id=doc.id) }}" class="card-img-top" alt="{{ doc.filename }}" style="aspect-ratio: 1/1; object-fit: cover;">
+              </a>
+            {% else %}
+              <div class="card-body text-center py-4">
+                <i class="bi bi-file-earmark-text fs-1 text-primary"></i>
+                <div class="mt-2 small text-truncate">{{ doc.filename }}</div>
+              </div>
+            {% endif %}
+            <div class="card-footer bg-white border-top-0 text-center">
+              <a href="{{ url_for('cabinet.download_document', doc_id=doc.id) }}" class="btn btn-sm btn-outline-primary w-100">
+                <i class="bi bi-download me-1"></i>Скачать
+              </a>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <a href="{{ url_for('cabinet.index') }}">Назад</a>
+
+  <!-- Image Viewer Modal -->
+  <div class="modal fade" id="imageViewerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="imageViewerTitle">Просмотр изображения</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-0 text-center bg-light">
+          <img src="" id="imageViewerContent" class="img-fluid" alt="Полный размер">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const imageViewerModal = document.getElementById('imageViewerModal');
+    if (imageViewerModal) {
+      imageViewerModal.addEventListener('show.bs.modal', function(event) {
+        const button = event.relatedTarget;
+        const imageUrl = button.getAttribute('data-bs-image');
+        const filename = button.getAttribute('data-bs-title');
+        
+        const modalImage = imageViewerModal.querySelector('#imageViewerContent');
+        const modalTitle = imageViewerModal.querySelector('#imageViewerTitle');
+        
+        modalImage.src = imageUrl;
+        modalTitle.textContent = filename;
+      });
+    }
+  });
+  </script>
+{% endblock %}

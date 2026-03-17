@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.sqlite3
+var/
+app/static/uploads/
+.img/
+.docs/

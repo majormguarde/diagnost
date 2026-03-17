@@ -1,0 +1,63 @@
+{% extends "admin/admin_base.html" %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+    <div>
+      <span class="badge neon-border-blue text-white mono mb-2">REVIEW_EDITOR.EXE</span>
+      <h1 class="h2 m-0 neon-text-blue mono">[ {{ "РЕДАКТИРОВАТЬ" if review.id else "ДОБАВИТЬ" }} ОТЗЫВ ]</h1>
+    </div>
+    <a href="{{ url_for('admin.reviews') }}" class="btn btn-outline-info mono">/назад_к_списку</a>
+  </div>
+
+  <div class="card bg-dark neon-border-blue shadow-lg">
+    <div class="card-body p-4">
+      <form method="POST" class="mono">
+        {{ form.hidden_tag() }}
+        
+        <div class="row">
+          <div class="col-md-6 mb-4">
+            <label class="form-label text-secondary small">> АВТОР</label>
+            {{ form.author_name(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Имя клиента") }}
+            {% for error in form.author_name.errors %}<span class="text-danger small">{{ error }}</span>{% endfor %}
+          </div>
+          <div class="col-md-6 mb-4">
+            <label class="form-label text-secondary small">> АВТОМОБИЛЬ</label>
+            {{ form.author_car(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Например: Toyota Camry") }}
+            {% for error in form.author_car.errors %}<span class="text-danger small">{{ error }}</span>{% endfor %}
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label text-secondary small">> ТЕКСТ ОТЗЫВА</label>
+          {{ form.text(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", rows=5, placeholder="Текст отзыва...") }}
+          {% for error in form.text.errors %}<span class="text-danger small">{{ error }}</span>{% endfor %}
+        </div>
+
+        <div class="row align-items-end">
+          <div class="col-md-4 mb-4">
+            <label class="form-label text-secondary small">> РЕЙТИНГ (1-5)</label>
+            {{ form.rating(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", type="number", min="1", max="5") }}
+            {% for error in form.rating.errors %}<span class="text-danger small">{{ error }}</span>{% endfor %}
+          </div>
+          <div class="col-md-8 mb-4">
+            <div class="form-check mt-4">
+              {{ form.is_published(class="form-check-input bg-dark border-secondary") }}
+              {{ form.is_published.label(class="form-check-label text-white small") }}
+              {% for error in form.is_published.errors %}<span class="text-danger small d-block">{{ error }}</span>{% endfor %}
+            </div>
+          </div>
+        </div>
+
+        <div class="d-flex gap-2 border-top border-secondary border-opacity-25 pt-4 mt-2">
+          <button type="submit" class="btn btn-info px-4 py-2 fw-bold">
+            <i class="bi bi-save me-2"></i>SAVE.EXE
+          </button>
+          <a href="{{ url_for('admin.reviews') }}" class="btn btn-outline-secondary px-4 py-2">
+            CANCEL.SH
+          </a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

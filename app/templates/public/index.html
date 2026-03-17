@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+{% set seo_title = org_settings.name ~ " — Диагностика и автоэлектрика" %}
+{% set seo_description = "Компьютерная диагностика, автоэлектрика и ремонт электронных систем. Онлайн-запись, прозрачные цены и опытные мастера." %}
+{% set seo_keywords = "диагностика авто, автоэлектрик, ремонт электронных систем, автосервис" %}
+{% set seo_canonical = url_for('public.index', _external=True) %}
+{% set seo_image = none %}
+{% if banners %}
+  {% if banners[0].image_path.startswith('http') %}
+    {% set seo_image = banners[0].image_path %}
+  {% else %}
+    {% set seo_image = url_for('static', filename=banners[0].image_path, _external=True) %}
+  {% endif %}
+{% endif %}
+
+{% block content %}
+<!-- Banner Gallery -->
+{% if banners %}
+<section class="banner-gallery position-relative">
+  <div id="heroCarousel" class="carousel slide carousel-fade" data-bs-ride="carousel">
+    <div class="carousel-indicators">
+      {% for banner in banners %}
+      <button type="button" data-bs-target="#heroCarousel" data-bs-slide-to="{{ loop.index0 }}" class="{% if loop.first %}active{% endif %}" aria-current="{% if loop.first %}true{% endif %}" aria-label="Slide {{ loop.index }}"></button>
+      {% endfor %}
+    </div>
+    <div class="carousel-inner">
+      {% for banner in banners %}
+      <div class="carousel-item {% if loop.first %}active{% endif %}" data-bs-interval="5000">
+         <div class="banner-image-container position-relative">
+           <img src="{{ banner.image_path if banner.image_path.startswith('http') else url_for('static', filename=banner.image_path) }}" class="d-block w-100 banner-img" alt="{{ banner.title }}">
+           <div class="banner-overlay"></div>
+           <div class="carousel-caption">
+             <div class="container-fluid p-0">
+               <span class="badge badge-tech mb-3 mono animate__animated animate__fadeInDown">СИСТЕМА_ОБНАРУЖЕНА: {{ banner.title|upper if banner.title else 'БАННЕР' }}</span>
+               <h1 class="animate__animated animate__fadeInLeft">{{ banner.title or 'ПЕРЕДОВАЯ ДИАГНОСТИКА' }}</h1>
+               <p class="animate__animated animate__fadeInUp">
+                 {% if banner.subtitle %}
+                   {{ banner.subtitle }}
+                 {% else %}
+                   Инициализация систем сканирования...
+                 {% endif %}
+               </p>
+               <div class="mt-4 animate__animated animate__fadeInUp animate__delay-1s">
+                 <a href="{{ banner.link or url_for('booking.step1') }}" class="btn btn-neon btn-lg px-5 py-3 mono">
+                   [ {{ 'ПЕРЕЙТИ.EXE' if banner.link else 'ОСТАВИТЬ_ЗАЯВКУ.EXE' }} ]
+                 </a>
+               </div>
+             </div>
+           </div>
+         </div>
+      </div>
+      {% endfor %}
+    </div>
+    <button class="carousel-control-prev" type="button" data-bs-target="#heroCarousel" data-bs-slide="prev">
+      <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+      <span class="visually-hidden">Предыдущий</span>
+    </button>
+    <button class="carousel-control-next" type="button" data-bs-target="#heroCarousel" data-bs-slide="next">
+      <span class="carousel-control-next-icon" aria-hidden="true"></span>
+      <span class="visually-hidden">Следующий</span>
+    </button>
+  </div>
+</section>
+{% else %}
+<!-- Default Hero Section if no banners -->
+<section class="hero-section scanline-container">
+  <div class="container hero-content">
+    <div class="row align-items-center">
+      <div class="col-lg-7">
+        <span class="badge badge-tech mb-3 mono">СТАТУС_СИСТЕМЫ: ОНЛАЙН</span>
+        <h1 class="hero-title">ПЕРЕДОВАЯ ДИАГНОСТИКА АВТО</h1>
+        <p class="lead text-white opacity-90 mb-5 fs-4 mono">> Инициализация систем сканирования...<br>> Обнаружение неисправностей: 100% точность.<br>> Доступ к дилерским базам: Разрешен.</p>
+        <div class="d-flex flex-wrap gap-3">
+          <a href="{{ url_for('booking.step1') }}" class="btn btn-neon btn-lg px-5 py-3 mono">
+            [ ОСТАВИТЬ_ЗАЯВКУ.EXE ]
+          </a>
+          <a href="{{ url_for('public.services') }}" class="btn btn-outline-info btn-lg px-5 py-3 mono" style="border-radius: 0; border-width: 2px;">
+            /посмотреть_услуги
+          </a>
+        </div>
+      </div>
+      <div class="col-lg-5 d-none d-lg-block text-center">
+        <div class="position-relative">
+          <div class="bg-info rounded-circle" style="width: 300px; height: 300px; filter: blur(100px); opacity: 0.2; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);"></div>
+          <i class="bi bi-cpu neon-text-blue blink" style="font-size: 15rem;"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<!-- Stats Bar -->
+<div class="container mt-n5 position-relative z-2">
+  <div class="row g-4 justify-content-center">
+    <div class="col-md-3 col-6">
+      <div class="feature-card text-center p-4">
+        <h2 class="neon-text-blue mb-0 fw-bold mono">{{ active_masters_count }}+</h2>
+        <p class="text-secondary small mb-0 mono">АКТИВНЫХ_МАСТЕРОВ</p>
+      </div>
+    </div>
+    <div class="col-md-3 col-6">
+      <div class="feature-card text-center p-4">
+        <h2 class="neon-text-blue mb-0 fw-bold mono">{{ active_works_count }}+</h2>
+        <p class="text-secondary small mb-0 mono">СПЕЦИАЛИЗАЦИЙ</p>
+      </div>
+    </div>
+    <div class="col-md-3 col-6">
+      <div class="feature-card text-center p-4">
+        <h2 class="neon-text-blue mb-0 fw-bold mono">{{ reviews_count }}+</h2>
+        <p class="text-secondary small mb-0 mono">ОТЗЫВОВ</p>
+      </div>
+    </div>
+    <div class="col-md-3 col-6">
+      <div class="feature-card text-center p-4">
+        <h2 class="neon-text-blue mb-0 fw-bold mono">{{ "%.1f"|format(avg_rating) }}</h2>
+        <p class="text-secondary small mb-0 mono">СРЕДНЯЯ_ОЦЕНКА</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Features Section -->
+<section class="py-5 mt-5 scanline-container">
+  <div class="container">
+    <div class="text-center mb-5">
+      <span class="badge badge-tech mb-3 mono">ОСНОВНЫЕ_МОДУЛИ</span>
+      <h2 class="section-title mono">ВОЗМОЖНОСТИ</h2>
+      <p class="text-secondary mono">Высокотехнологичные протоколы для сложных задач</p>
+    </div>
+    
+    <div class="row g-4">
+      <div class="col-md-4">
+        <div class="feature-card h-100">
+          <div class="icon-box">
+            <i class="bi bi-search"></i>
+          </div>
+          <h3 class="mono h4">ГЛУБОКИЙ_СКАН</h3>
+          <p class="text-white opacity-75 mb-0 small mono">Комплексная компьютерная диагностика всех электронных модулей автомобиля.</p>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="feature-card h-100">
+          <div class="icon-box">
+            <i class="bi bi-lightning-charge"></i>
+          </div>
+          <h3 class="mono h4">РЕМОНТ_БЛОКОВ</h3>
+          <p class="text-white opacity-75 mb-0 small mono">Восстановление блоков управления, ремонт электропроводки и мультимедиа.</p>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="feature-card h-100">
+          <div class="icon-box">
+            <i class="bi bi-shield-check"></i>
+          </div>
+          <h3 class="mono h4">СТАБИЛЬНОСТЬ</h3>
+          <p class="text-white opacity-75 mb-0 small mono">Гарантия на все выполненные работы. Стабильность систем после вмешательства.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% if featured_works %}
+<section class="py-5">
+  <div class="container">
+    <div class="text-center mb-5">
+      <span class="badge badge-tech mb-3 mono">ПОПУЛЯРНЫЕ_НАПРАВЛЕНИЯ</span>
+      <h2 class="section-title mono">СПЕЦИАЛИЗАЦИЯ</h2>
+      <p class="text-secondary mono">Актуальные работы с понятной длительностью и ориентиром по стоимости</p>
+    </div>
+    <div class="row g-4">
+      {% for work in featured_works %}
+      <div class="col-md-6 col-lg-4">
+        <div class="feature-card h-100 p-4">
+          <div class="d-flex justify-content-between align-items-start mb-3">
+            <span class="badge badge-tech mono">{{ work.category.title if work.category else "ОБЩЕЕ" }}</span>
+            <span class="mono text-secondary small">{{ work.duration_min }} МИН</span>
+          </div>
+          <h3 class="h5 mono mb-3">{{ work.title }}</h3>
+          <p class="text-white opacity-75 small mono mb-4">{{ work.description or "Точная диагностика и ремонт с фиксацией результата и рекомендациями." }}</p>
+          <div class="d-flex justify-content-between align-items-center border-top border-secondary border-opacity-25 pt-3">
+            <span class="mono text-secondary small">СТАРТ_ОТ</span>
+            <span class="mono neon-text-blue fw-bold">{{ work.base_price or 0 }} ₽</span>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="text-center mt-4">
+      <a href="{{ url_for('public.services') }}" class="btn btn-outline-info px-5 py-3 mono" style="border-radius: 0; border-width: 2px;">
+        /полный_каталог
+      </a>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<section class="py-5 scanline-container">
+  <div class="container">
+    <div class="text-center mb-5">
+      <span class="badge badge-tech mb-3 mono">ПРОЦЕСС_РАБОТЫ</span>
+      <h2 class="section-title mono">КАК_МЫ_РАБОТАЕМ</h2>
+      <p class="text-secondary mono">Прозрачная последовательность от заявки до результата</p>
+    </div>
+    <div class="row g-4">
+      <div class="col-md-3 col-6">
+        <div class="feature-card h-100 text-center p-4">
+          <h3 class="mono neon-text-blue mb-3">01</h3>
+          <p class="mono small text-white opacity-85 mb-0">ЗАЯВКА<br>НА САЙТЕ ИЛИ ПО ТЕЛЕФОНУ</p>
+        </div>
+      </div>
+      <div class="col-md-3 col-6">
+        <div class="feature-card h-100 text-center p-4">
+          <h3 class="mono neon-text-blue mb-3">02</h3>
+          <p class="mono small text-white opacity-85 mb-0">ДИАГНОСТИКА<br>И ПЛАН РАБОТ</p>
+        </div>
+      </div>
+      <div class="col-md-3 col-6">
+        <div class="feature-card h-100 text-center p-4">
+          <h3 class="mono neon-text-blue mb-3">03</h3>
+          <p class="mono small text-white opacity-85 mb-0">СОГЛАСОВАНИЕ<br>СРОКОВ И СМЕТЫ</p>
+        </div>
+      </div>
+      <div class="col-md-3 col-6">
+        <div class="feature-card h-100 text-center p-4">
+          <h3 class="mono neon-text-blue mb-3">04</h3>
+          <p class="mono small text-white opacity-85 mb-0">РЕМОНТ<br>И ВЫДАЧА ОТЧЕТА</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA Section -->
+<section class="py-5 mb-5">
+  <div class="container">
+    <div class="feature-card p-5 overflow-hidden">
+      <div class="row align-items-center position-relative z-1">
+        <div class="col-lg-8">
+          <h2 class="mono mb-3">ГОТОВЫ К ДИАГНОСТИКЕ?</h2>
+          <p class="text-white opacity-75 mb-0 mono">Запишитесь сейчас и получите полный отчет о состоянии вашего автомобиля.</p>
+        </div>
+        <div class="col-lg-4 text-lg-end mt-4 mt-lg-0">
+          <a href="{{ url_for('booking.step1') }}" class="btn btn-neon btn-lg px-5 mono">[ ПОДАТЬ_ЗАЯВКУ ]</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Reviews Section -->
+{% if reviews %}
+<section class="py-5 scanline-container">
+  <div class="container">
+    <div class="text-center mb-5">
+      <span class="badge badge-tech mb-3 mono">ОТЗЫВЫ_КЛИЕНТОВ</span>
+      <h2 class="section-title mono">ЧТО О НАС ГОВОРЯТ</h2>
+      <p class="text-secondary mono">Реальные истории успешного восстановления</p>
+    </div>
+    
+    <div class="row g-4">
+      {% for review in reviews %}
+      <div class="col-md-4">
+        <div class="feature-card h-100 p-4">
+          <div class="mb-3 text-warning">
+            {% for i in range(review.rating) %}<i class="bi bi-star-fill"></i>{% endfor %}
+            {% for i in range(5 - review.rating) %}<i class="bi bi-star"></i>{% endfor %}
+          </div>
+          <p class="text-white opacity-90 mb-4 italic mono">"{{ review.text }}"</p>
+          <div class="d-flex align-items-center mt-auto pt-3 border-top border-secondary border-opacity-25">
+            <div class="ms-0">
+              <h5 class="mono mb-0 text-info">{{ review.author_name }}</h5>
+              <small class="text-secondary mono">{{ review.author_car or 'Клиент техцентра' }}</small>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<style>
+  .mt-n5 {
+    margin-top: -3rem !important;
+  }
+  @media (max-width: 991.98px) {
+    .hero-title {
+      font-size: 2.5rem;
+    }
+    .mt-n5 {
+      margin-top: -2rem !important;
+    }
+  }
+</style>
+{% endblock %}

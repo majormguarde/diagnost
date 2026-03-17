@@ -1,0 +1,80 @@
+{% extends "admin/admin_base.html" %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+    <div>
+      <span class="badge neon-border-blue text-white mono mb-2">REVIEWS_MODERATION.EXE</span>
+      <h1 class="h2 m-0 neon-text-blue mono">[ ОТЗЫВЫ ]</h1>
+    </div>
+    <a href="{{ url_for('admin.review_edit') }}" class="btn btn-outline-info mono">/добавить_отзыв</a>
+  </div>
+
+  <div class="card bg-dark neon-border-blue shadow-lg">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-dark table-hover align-middle mb-0 mono small">
+          <thead class="text-secondary border-secondary border-opacity-25">
+            <tr>
+              <th class="ps-4">АВТОР / АВТОМОБИЛЬ</th>
+              <th>ТЕКСТ</th>
+              <th>РЕЙТИНГ</th>
+              <th>ДАТА</th>
+              <th>СТАТУС</th>
+              <th class="text-end pe-4">ДЕЙСТВИЯ</th>
+            </tr>
+          </thead>
+          <tbody class="border-secondary border-opacity-10">
+            {% for review in reviews %}
+            <tr>
+              <td class="ps-4">
+                <div class="text-white fw-bold">{{ review.author_name }}</div>
+                <div class="text-secondary smaller">{{ review.author_car or 'БЕЗ АВТОМОБИЛЯ' }}</div>
+              </td>
+              <td>
+                <div class="text-white text-truncate" style="max-width: 380px;">{{ review.text }}</div>
+              </td>
+              <td>
+                <div class="text-warning">
+                  {% for i in range(review.rating) %}<i class="bi bi-star-fill"></i>{% endfor %}
+                  {% for i in range(5 - review.rating) %}<i class="bi bi-star"></i>{% endfor %}
+                </div>
+              </td>
+              <td>
+                <div class="text-secondary">{{ review.created_at.strftime('%d.%m.%Y') }}</div>
+              </td>
+              <td>
+                {% if review.is_published %}
+                <span class="badge neon-border-green text-success mono">ОПУБЛИКОВАН</span>
+                {% else %}
+                <span class="badge border border-secondary text-secondary mono">НА ПРОВЕРКЕ</span>
+                {% endif %}
+              </td>
+              <td class="text-end pe-4">
+                <div class="d-inline-flex gap-1">
+                  <a href="{{ url_for('admin.review_edit', review_id=review.id) }}" class="btn btn-sm btn-outline-info mono">
+                    <i class="bi bi-pencil"></i>
+                  </a>
+                  <form action="{{ url_for('admin.review_delete', review_id=review.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Удалить этот отзыв?')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger mono">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="6" class="text-center py-5 text-secondary">
+                <i class="bi bi-chat-left-text d-block fs-1 mb-2 opacity-25"></i>
+                ОТЗЫВОВ ПОКА НЕТ
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

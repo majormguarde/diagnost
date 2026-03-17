@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% set seo_title = "Онлайн-заявка — " ~ org_settings.name %}
+{% set seo_description = "Форма записи на диагностику и автоэлектрику. Выберите мастера, дату и оставьте заявку." %}
+{% set seo_robots = "noindex,nofollow" %}
+{% set seo_canonical = url_for('booking.step1', _external=True) %}
+
+{% block content %}
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-lg-8">
+      <div class="text-center mb-5">
+        <h1 class="section-title">Онлайн-заявка</h1>
+        <p class="text-muted">Шаг 1: Выберите услуги, мастера и дату</p>
+      </div>
+
+      <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+        <div class="bg-primary p-3"></div>
+        <form method="post" class="card-body p-4 p-md-5">
+          {{ form.hidden_tag() }}
+          
+          <div class="row g-4">
+            <div class="col-md-6">
+              <label class="form-label fw-bold"><i class="bi bi-person-badge me-2 text-primary"></i>Выберите мастера</label>
+              {{ form.master_id(class="form-select form-select-lg rounded-3 border-light-subtle bg-light") }}
+              {% for error in form.master_id.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+            
+            <div class="col-md-6">
+              <label class="form-label fw-bold"><i class="bi bi-calendar3 me-2 text-primary"></i>Дата визита</label>
+              {{ form.date(class="form-control form-control-lg rounded-3 border-light-subtle bg-light", type="date", min=today_str) }}
+              {% for error in form.date.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+              {% if org_settings.work_days %}
+              <div class="mt-2 small text-muted">
+                <i class="bi bi-info-circle me-1"></i>
+                Рабочие дни: 
+                {% set day_names = {'0': 'Пн', '1': 'Вт', '2': 'Ср', '3': 'Чт', '4': 'Пт', '5': 'Сб', '6': 'Вс'} %}
+                {% for d in org_settings.work_days.split(',') %}{{ day_names[d] }}{% if not loop.last %}, {% endif %}{% endfor %}
+              </div>
+              {% endif %}
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-bold"><i class="bi bi-car-front me-2 text-primary"></i>Данные автомобиля</label>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  {{ form.car_make(class="form-control rounded-3 border-light-subtle bg-light", placeholder="Марка (напр. Toyota)") }}
+                  {% for error in form.car_make.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                </div>
+                <div class="col-md-6">
+                  {{ form.car_model(class="form-control rounded-3 border-light-subtle bg-light", placeholder="Модель (напр. Camry)") }}
+                  {% for error in form.car_model.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                </div>
+                <div class="col-md-6">
+                  {{ form.car_year(class="form-control rounded-3 border-light-subtle bg-light", placeholder="Год выпуска", type="number") }}
+                  {% for error in form.car_year.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                </div>
+                <div class="col-md-6">
+                  {{ form.car_number(class="form-control rounded-3 border-light-subtle bg-light", placeholder="Гос.номер") }}
+                  {% for error in form.car_number.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                </div>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-bold"><i class="bi bi-chat-left-dots me-2 text-primary"></i>Описание неисправностей</label>
+              {{ form.problem_description(class="form-control rounded-3 border-light-subtle bg-light", rows=5, placeholder="Опишите, что случилось с автомобилем своими словами...") }}
+              {% for error in form.problem_description.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+
+            <div class="col-12 text-center mt-5">
+              <button type="submit" class="btn btn-primary btn-lg px-5 py-3 rounded-pill shadow w-100 w-md-auto">
+                Далее: Выбор времени <i class="bi bi-arrow-right ms-2"></i>
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+      
+      <div class="mt-4 text-center">
+        <p class="text-muted small">Есть вопросы? Позвоните нам: <a href="tel:{{ org_settings.phone or '+79990000000' }}" class="text-decoration-none fw-bold">{{ org_settings.phone or "+7 (999) 000-00-00" }}</a></p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ru.js"></script>
+<style>
+    .flatpickr-calendar { background: #1a1d21 !important; border: 1px solid #0dcaf0 !important; box-shadow: 0 0 15px rgba(13, 202, 240, 0.3) !important; }
+    .flatpickr-day.selected { background: #0dcaf0 !important; border-color: #0dcaf0 !important; }
+    .flatpickr-day:hover { background: #343a40 !important; }
+    .flatpickr-day.disabled { color: rgba(255, 255, 255, 0.1) !important; }
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const workDays = "{{ org_settings.work_days }}".split(',');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    flatpickr('input[type="date"]', {
+        locale: "ru",
+        minDate: "today",
+        disable: [
+            function(date) {
+                // JS getDay(): 0 (Sun) to 6 (Sat)
+                // Python weekday(): 0 (Mon) to 6 (Sun)
+                let jsDay = date.getDay();
+                let pyDay = (jsDay === 0) ? 6 : jsDay - 1;
+                return !workDays.includes(pyDay.toString());
+            }
+        ],
+        dateFormat: "Y-m-d",
+        onChange: function(selectedDates, dateStr, instance) {
+            // Optional: further logic on date change
+        }
+    });
+});
+</script>
+{% endblock %}

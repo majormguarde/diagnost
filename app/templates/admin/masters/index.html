@@ -1,0 +1,58 @@
+{% extends "admin/admin_base.html" %}
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+    <div>
+      <span class="badge neon-border-blue text-white mono mb-2">PERSONNEL_DB.EXE</span>
+      <h1 class="h2 m-0 neon-text-blue mono">МАСТЕРА</h1>
+    </div>
+    <a href="{{ url_for('admin.master_edit') }}" class="btn btn-outline-info mono">+ ДОБАВИТЬ_МАСТЕРА.SH</a>
+  </div>
+
+  <div class="card bg-dark neon-border-blue shadow-lg">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-dark table-hover mb-0 mono small">
+          <thead class="text-secondary border-secondary border-opacity-25">
+            <tr>
+              <th class="ps-4">ID</th>
+              <th>ИМЯ_МАСТЕРА</th>
+              <th>ПРОЦЕНТ (%)</th>
+              <th>АКТИВЕН</th>
+              <th class="text-end pe-4">ДЕЙСТВИЯ</th>
+            </tr>
+          </thead>
+          <tbody class="border-secondary border-opacity-10">
+            {% for master in masters %}
+              <tr>
+                <td class="ps-4">> {{ master.id }}</td>
+                <td class="text-white">{{ master.name }}</td>
+                <td class="text-info">{{ master.payout_percent }}%</td>
+                <td>
+                  <span class="badge border {{ 'border-success text-success bg-success' if master.is_active else 'border-danger text-danger bg-danger' }} bg-opacity-10 border-opacity-25">
+                    {{ "АКТИВЕН" if master.is_active else "ОТКЛЮЧЕН" }}
+                  </span>
+                </td>
+                <td class="text-end pe-4">
+                  <a href="{{ url_for('admin.master_edit', master_id=master.id) }}" class="btn btn-sm btn-outline-info mono me-2">
+                    EDIT.CFG
+                  </a>
+                  <a href="{{ url_for('admin.schedule', master_id=master.id) }}" class="btn btn-sm btn-outline-secondary mono">
+                    SCHEDULE.LOG
+                  </a>
+                </td>
+              </tr>
+            {% endfor %}
+            {% if not masters %}
+              <tr>
+                <td colspan="5" class="text-center py-5 text-secondary">
+                  <i class="bi bi-person-slash fs-1 d-block mb-3 opacity-25"></i>
+                  СПИСОК_МАСТЕРОВ_ПУСТ.NULL
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endblock %}

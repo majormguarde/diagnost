@@ -1,0 +1,123 @@
+{% extends "admin/admin_base.html" %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+    <div>
+      <span class="badge neon-border-blue text-white mono mb-2">FINANCIAL_REPORTS.EXE</span>
+      <h1 class="h2 m-0 neon-text-blue mono">[ ВЕДОМОСТЬ НАЧИСЛЕНИЙ ]</h1>
+    </div>
+    <div class="d-flex gap-3">
+      <a href="{{ url_for('admin.payouts_print', start_date=start_date, end_date=end_date) }}" target="_blank" class="btn btn-sm btn-outline-secondary mono d-print-none">
+        <i class="bi bi-printer me-2"></i>ПЕЧАТЬ.PDF
+      </a>
+      <form class="d-flex gap-2 align-items-end d-print-none">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div>
+          <label class="form-label mono smaller text-secondary">ОТ</label>
+          <input type="date" name="start_date" class="form-control form-control-sm bg-dark text-white border-secondary border-opacity-50 mono" value="{{ start_date }}">
+        </div>
+        <div>
+          <label class="form-label mono smaller text-secondary">ДО</label>
+          <input type="date" name="end_date" class="form-control form-control-sm bg-dark text-white border-secondary border-opacity-50 mono" value="{{ end_date }}">
+        </div>
+        <button type="submit" class="btn btn-sm btn-info mono">ФИЛЬТР.SH</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- DEBUG: Payouts count: {{ payouts|length }} -->
+    {% for master_data in payouts %}
+    <div class="col-12 section-to-print">
+      <div class="card bg-dark neon-border-blue shadow-lg">
+        <div class="card-header border-secondary border-opacity-25 bg-transparent py-3 d-flex justify-content-between align-items-center">
+          <h5 class="card-title m-0 mono text-white">
+            <i class="bi bi-person-badge me-2"></i>{{ master_data.master.name | upper }}
+          </h5>
+          <!-- DEBUG: Master items: {{ master_data.work_items|length }} -->
+          <div class="text-end d-flex align-items-center gap-3">
+            <div class="mono small text-secondary">
+              <span class="d-block">ОБЩАЯ СУММА: {{ master_data.total_work_amount }} РУБ.</span>
+              <span class="d-block">СТАВКА: {{ master_data.master.payout_percent }}%</span>
+            </div>
+            <div class="text-end">
+              <span class="text-secondary mono smaller">К ВЫПЛАТЕ:</span>
+              <span class="neon-text-blue ms-2 h5 mb-0 mono">{{ master_data.total_payout }} РУБ.</span>
+            </div>
+            {% if master_data.total_payout > 0 %}
+            <form action="{{ url_for('admin.payouts_pay', master_id=master_data.master.id, start_date=start_date, end_date=end_date) }}" method="POST" class="d-print-none">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-success mono" onclick="return confirm('Отметить выплату {{ master_data.total_payout }} руб. мастеру {{ master_data.master.name }}?')">
+                ВЫПЛАТИТЬ.EXE
+              </button>
+            </form>
+            {% else %}
+            <button class="btn btn-sm btn-outline-secondary mono disabled d-print-none">ВЫПЛАЧЕНО</button>
+            {% endif %}
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 mono small">
+              <thead class="text-secondary border-secondary border-opacity-25">
+                <tr>
+                  <th class="ps-4">ДАТА</th>
+                  <th>ЗАКАЗ-НАРЯД</th>
+                  <th>РАБОТА</th>
+                  <th>СТАТУС</th>
+                  <th class="text-end pe-4">СТОИМОСТЬ РАБОТЫ</th>
+                </tr>
+              </thead>
+              <tbody class="border-secondary border-opacity-10">
+                {% for item in master_data.work_items %}
+                <tr>
+                  <td class="ps-4 text-secondary">{{ item.created_at.strftime('%d.%m.%Y') }}</td>
+                  <td>
+                    <a href="{{ url_for('admin.work_order_detail', order_id=item.work_order_id) }}" class="text-info text-decoration-none">
+                      #{{ item.work_order_id }}
+                    </a>
+                  </td>
+                  <td>{{ item.title }}</td>
+                  <td>
+                    {% if item.is_paid %}
+                    <span class="badge bg-secondary opacity-50 mono smaller">ВЫПЛАЧЕНО</span>
+                    {% else %}
+                    <span class="badge bg-warning text-dark mono smaller">К ОПЛАТЕ</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-end neon-text-blue pe-4">{{ item.price }} РУБ.</td>
+                </tr>
+                {% endfor %}
+                {% if not master_data.work_items %}
+                <tr>
+                  <td colspan="5" class="text-center py-4 text-secondary">НЕТ ВЫПОЛНЕННЫХ РАБОТ ЗА ПЕРИОД</td>
+                </tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+    
+    {% if not payouts %}
+    <div class="col-12 text-center py-5">
+      <div class="opacity-25 mb-3">
+        <i class="bi bi-wallet2" style="font-size: 4rem;"></i>
+      </div>
+      <h3 class="mono text-secondary">ДАННЫЕ ЗА ВЫБРАННЫЙ ПЕРИОД ОТСУТСТВУЮТ</h3>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+  @media print {
+    .section-to-print { display: block !important; width: 100% !important; }
+    .card { page-break-inside: avoid; }
+    .mono { font-family: "Courier New", Courier, monospace !important; }
+    .neon-text-blue { font-weight: bold !important; }
+  }
+</style>
+{% endblock %}

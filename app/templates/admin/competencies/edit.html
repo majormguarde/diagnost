@@ -1,0 +1,34 @@
+{% extends "admin/admin_base.html" %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+    <div>
+      <span class="badge neon-border-blue text-white mono mb-2">SPECIALIZATION_CONFIG.EXE</span>
+      <h1 class="h2 m-0 neon-text-blue mono">[ {{ "РЕДАКТИРОВАТЬ" if competency.id else "ДОБАВИТЬ" }} СПЕЦИАЛИЗАЦИЮ ]</h1>
+    </div>
+    <a href="{{ url_for('admin.competencies') }}" class="btn btn-outline-info mono">/назад_к_списку</a>
+  </div>
+
+  <div class="card bg-dark neon-border-blue shadow-lg">
+    <div class="card-body p-4">
+      <form method="POST" class="mono">
+        {{ form.hidden_tag() }}
+        <div class="mb-4">
+          <label class="form-label text-secondary small">> НАЗВАНИЕ_СПЕЦИАЛИЗАЦИИ</label>
+          {{ form.title(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Компьютерная диагностика") }}
+          {% for error in form.title.errors %}<span class="text-danger small">{{ error }}</span>{% endfor %}
+        </div>
+
+        <div class="d-flex gap-3 mt-4">
+          <button type="submit" class="btn btn-info px-5 py-2 mono fw-bold">
+            <i class="bi bi-save me-2"></i>СОХРАНИТЬ.EXE
+          </button>
+          <a href="{{ url_for('admin.competencies') }}" class="btn btn-outline-secondary px-4 py-2 mono">
+            ОТМЕНА.SH
+          </a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

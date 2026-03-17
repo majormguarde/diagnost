@@ -1,0 +1,75 @@
+{% extends "admin/admin_base.html" %}
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+    <div>
+      <span class="badge neon-border-blue text-white mono mb-2">DATABASE_VIEWER.EXE</span>
+      <h1 class="h2 m-0 neon-text-blue mono">ЗАКАЗ-НАРЯДЫ</h1>
+    </div>
+  </div>
+
+  <div class="card bg-dark neon-border-blue shadow-lg">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-dark table-hover mb-0 mono small">
+          <thead class="text-secondary border-secondary border-opacity-25">
+            <tr>
+              <th class="ps-4">ID</th>
+              <th>КЛИЕНТ</th>
+              <th>МАСТЕР</th>
+              <th>СУММА</th>
+              <th>СТАТУС</th>
+              <th>ЗАКРЫТ</th>
+              <th class="text-end pe-4">ДЕЙСТВИЯ</th>
+            </tr>
+          </thead>
+          <tbody class="border-secondary border-opacity-10">
+            {% for order in orders %}
+              <tr>
+                <td class="ps-4">> {{ order.id }}</td>
+                <td>
+                  <div class="text-white">{{ order.client.name }}</div>
+                  <div class="text-secondary smaller">{{ order.client.phone }}</div>
+                </td>
+                <td>{{ order.master.name }}</td>
+                <td class="neon-text-blue fw-bold">{{ order.total_amount or "---" }} РУБ.</td>
+                <td>
+                  <span class="badge border border-opacity-25 bg-opacity-10 {{ {
+                    'draft': 'border-secondary text-secondary bg-secondary',
+                    'new': 'border-info text-info bg-info',
+                    'in_progress': 'border-warning text-warning bg-warning',
+                    'completed': 'border-success text-success bg-success',
+                    'closed': 'border-success text-success bg-success',
+                    'cancelled': 'border-danger text-danger bg-danger'
+                  }[order.status] }}">
+                    {{ {
+                      'draft': 'ЧЕРНОВИК',
+                      'new': 'НОВЫЙ',
+                      'in_progress': 'В РАБОТЕ',
+                      'completed': 'ВЫПОЛНЕН',
+                      'closed': 'ЗАКРЫТ',
+                      'cancelled': 'ОТМЕНЕН'
+                    }[order.status] }}
+                  </span>
+                </td>
+                <td>{{ order.closed_at.strftime('%d.%m.%Y %H:%M') if order.closed_at else "---" }}</td>
+                <td class="text-end pe-4">
+                  <a href="{{ url_for('admin.work_order_detail', order_id=order.id) }}" class="btn btn-sm btn-outline-info mono">
+                    ОТКРЫТЬ.EXE
+                  </a>
+                </td>
+              </tr>
+            {% endfor %}
+            {% if not orders %}
+              <tr>
+                <td colspan="7" class="text-center py-5 text-secondary">
+                  <i class="bi bi-folder2-open fs-1 d-block mb-3 opacity-25"></i>
+                  БАЗА_ДАННЫХ_ПУСТА.NULL
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endblock %}

@@ -1,0 +1,84 @@
+{% extends "admin/admin_base.html" %}
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+    <div>
+      <span class="badge neon-border-blue text-white mono mb-2">APPOINTMENT_LOG.EXE</span>
+      <h1 class="h2 m-0 neon-text-blue mono">ВСЕ ЗАЯВКИ</h1>
+    </div>
+  </div>
+
+  <div class="card bg-dark neon-border-blue shadow-lg">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-dark table-hover mb-0 mono small">
+          <thead class="text-secondary border-secondary border-opacity-25">
+            <tr>
+              <th class="ps-4">ID</th>
+              <th>ДАТА СОЗДАНИЯ</th>
+              <th>ВРЕМЯ ПРИЕМА</th>
+              <th>АВТОМОБИЛЬ</th>
+              <th>КЛИЕНТ</th>
+              <th>МАСТЕР</th>
+              <th>СТАТУС</th>
+              <th class="text-end pe-4">ДЕЙСТВИЯ</th>
+            </tr>
+          </thead>
+          <tbody class="border-secondary border-opacity-10">
+            {% for appt in appointments %}
+              <tr>
+                <td class="ps-4">> {{ appt.id }}</td>
+                <td class="text-secondary">{{ appt.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+                <td class="neon-text-blue fw-bold">{{ appt.start_at.strftime('%d.%m.%Y %H:%M') }}</td>
+                <td>
+                  {% if appt.car_make %}
+                    <div class="text-white">{{ appt.car_make }} {{ appt.car_model }}</div>
+                    <div class="text-secondary smaller">{{ appt.car_number or 'БЕЗ_НОМЕРА.NULL' }}</div>
+                  {% else %}
+                    <span class="text-secondary opacity-50">НЕ_УКАЗАН.NULL</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <div class="text-white">{{ appt.client.name }}</div>
+                  <div class="text-secondary smaller">{{ appt.client.phone }}</div>
+                </td>
+                <td>{{ appt.master.name }}</td>
+                <td>
+                  <span class="badge border border-opacity-25 bg-opacity-10 {{ {
+                    'new': 'border-info text-info bg-info',
+                    'confirmed': 'border-success text-success bg-success',
+                    'in_progress': 'border-warning text-warning bg-warning',
+                    'done': 'border-info text-info bg-info',
+                    'cancelled_by_admin': 'border-danger text-danger bg-danger',
+                    'cancelled_by_client': 'border-secondary text-secondary bg-secondary'
+                  }[appt.status] }}">
+                    {{ {
+                      'new': 'НОВАЯ',
+                      'confirmed': 'ПОДТВЕРЖДЕНА',
+                      'in_progress': 'В_РАБОТЕ',
+                      'done': 'ВЫПОЛНЕНА',
+                      'cancelled_by_admin': 'ОТМЕНЕНА_АДМИН',
+                      'cancelled_by_client': 'ОТМЕНЕНА_КЛИЕНТ'
+                    }[appt.status] }}
+                  </span>
+                </td>
+                <td class="text-end pe-4">
+                  <a href="{{ url_for('admin.appointment_detail', appointment_id=appt.id) }}" class="btn btn-sm btn-outline-info mono">
+                    ДЕТАЛИ.EXE
+                  </a>
+                </td>
+              </tr>
+            {% endfor %}
+            {% if not appointments %}
+              <tr>
+                <td colspan="8" class="text-center py-5 text-secondary">
+                  <i class="bi bi-folder2-open fs-1 d-block mb-3 opacity-25"></i>
+                  БАЗА_ДАННЫХ_ПУСТА.NULL
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endblock %}

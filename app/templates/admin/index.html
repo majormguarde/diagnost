@@ -1,0 +1,67 @@
+{% extends "admin/admin_base.html" %}
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+    <div>
+      <span class="badge neon-border-blue text-white mono mb-2">SYSTEM_OVERVIEW.EXE</span>
+      <h1 class="h2 m-0 neon-text-blue mono">ДАШБОРД</h1>
+    </div>
+  </div>
+  
+  <div class="row g-4 mb-4">
+    <div class="col-md-3">
+      <div class="card bg-dark neon-border-blue shadow-lg h-100">
+        <div class="card-body">
+          <h5 class="card-title text-secondary mono small mb-3">> ЗАЯВОК</h5>
+          <p class="card-text fs-2 neon-text-blue mono fw-bold">{{ appointments_count }}</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card bg-dark neon-border-blue shadow-lg h-100">
+        <div class="card-body">
+          <h5 class="card-title text-secondary mono small mb-3">> МАСТЕРОВ</h5>
+          <p class="card-text fs-2 neon-text-blue mono fw-bold">{{ active_masters_count }}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-md-4">
+      <div class="card bg-dark border-secondary border-opacity-25 shadow-lg">
+        <div class="card-header bg-dark border-secondary border-opacity-25 text-secondary mono small">
+          > СПРАВОЧНИКИ
+        </div>
+        <div class="list-group list-group-flush bg-dark">
+          <a href="{{ url_for('admin.masters') }}" class="list-group-item list-group-item-action bg-dark text-white mono small border-secondary border-opacity-10 py-3">
+            <i class="bi bi-people me-2"></i>МАСТЕРА
+          </a>
+          <a href="{{ url_for('admin.works') }}" class="list-group-item list-group-item-action bg-dark text-white mono small border-secondary border-opacity-10 py-3">
+            <i class="bi bi-tools me-2"></i>СПЕЦИАЛИЗАЦИЯ
+          </a>
+          <a href="{{ url_for('admin.categories') }}" class="list-group-item list-group-item-action bg-dark text-white mono small border-secondary border-opacity-10 py-3">
+            <i class="bi bi-tags me-2"></i>КАТЕГОРИИ_СПЕЦИАЛИЗАЦИЙ
+          </a>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card bg-dark border-secondary border-opacity-25 shadow-lg">
+        <div class="card-header bg-dark border-secondary border-opacity-25 text-secondary mono small">
+          > ОПЕРАЦИИ
+        </div>
+        <div class="list-group list-group-flush bg-dark">
+          <a href="{{ url_for('admin.appointments') }}" class="list-group-item list-group-item-action bg-dark text-white mono small border-secondary border-opacity-10 py-3">
+            <i class="bi bi-calendar-event me-2"></i>ЗАЯВКИ_НА_ОБСЛУЖИВАНИЕ
+            {% if appointments_count > 0 %}
+              <span class="badge neon-border-blue text-white float-end">{{ appointments_count }}</span>
+            {% endif %}
+          </a>
+          <a href="{{ url_for('admin.work_orders') }}" class="list-group-item list-group-item-action bg-dark text-white mono small border-secondary border-opacity-10 py-3">
+            <i class="bi bi-file-earmark-text me-2"></i>ЗАКАЗ-НАРЯДЫ
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

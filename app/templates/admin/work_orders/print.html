@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Заказ-наряд №{{ order.id }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: white;
+            color: black;
+            font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 12px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header-logo {
+            font-size: 24px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            border-bottom: 2px solid black;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .section-title {
+            background-color: #f8f9fa;
+            font-weight: bold;
+            padding: 5px 10px;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            border-left: 4px solid black;
+        }
+        .info-table th {
+            width: 30%;
+            color: #6c757d;
+            font-weight: normal;
+        }
+        .table-items thead th {
+            background-color: #f8f9fa;
+            border-bottom: 2px solid #dee2e6;
+        }
+        .total-row {
+            font-size: 16px;
+            font-weight: bold;
+        }
+        .footer-signatures {
+            margin-top: 50px;
+        }
+        .signature-line {
+            border-bottom: 1px solid black;
+            width: 200px;
+            display: inline-block;
+        }
+        @media print {
+            .no-print {
+                display: none;
+            }
+            body {
+                padding: 0;
+            }
+            .container {
+                max-width: 100%;
+                width: 100%;
+                padding: 0;
+            }
+        }
+    </style>
+</head>
+<body onload="window.print()">
+    <div class="container">
+        <div class="no-print mb-4 d-flex justify-content-between">
+            <a href="{{ url_for('admin.work_order_detail', order_id=order.id) }}" class="btn btn-secondary">← Вернуться к заказу</a>
+            <button onclick="window.print()" class="btn btn-primary">Распечатать / Сохранить в PDF</button>
+        </div>
+
+        <div class="header-logo d-flex justify-content-between align-items-center">
+            <span>{{ settings.name or 'DIAGNOST.EXE' }}</span>
+            <span class="fs-6 fw-normal text-secondary">ЗАКАЗ-НАРЯД №{{ order.id }} ОТ {{ order.created_at.strftime('%d.%m.%Y') }}</span>
+        </div>
+
+        <div class="row">
+            <div class="col-6">
+                <div class="section-title">ИСПОЛНИТЕЛЬ</div>
+                <table class="table table-sm table-borderless info-table">
+                    <tr><th>Организация:</th><td>{{ settings.name }}</td></tr>
+                    <tr><th>Адрес:</th><td>{{ settings.address or '---' }}</td></tr>
+                    <tr><th>Телефон:</th><td>{{ settings.phone or '---' }}</td></tr>
+                    <tr><th>Мастер:</th><td>{{ order.master.name }}</td></tr>
+                </table>
+            </div>
+            <div class="col-6">
+                <div class="section-title">ЗАКАЗЧИК</div>
+                <table class="table table-sm table-borderless info-table">
+                    <tr><th>ФИО:</th><td>{{ order.client.name }}</td></tr>
+                    <tr><th>Телефон:</th><td>{{ order.client.phone }}</td></tr>
+                    <tr><th>Автомобиль:</th><td>{{ order.appointment.car_make if order.appointment else '---' }} {{ order.appointment.car_model if order.appointment else '' }}</td></tr>
+                    <tr><th>Гос.номер:</th><td>{{ order.appointment.car_number if order.appointment else '---' }}</td></tr>
+                </table>
+            </div>
+        </div>
+
+        <div class="section-title">ПЕРЕЧЕНЬ РАБОТ И УСЛУГ</div>
+        <table class="table table-sm table-items">
+            <thead>
+                <tr>
+                    <th class="ps-3">№</th>
+                    <th>Наименование работ</th>
+                    <th class="text-center">Норма (мин)</th>
+                    <th class="text-center">Факт (мин)</th>
+                    <th class="text-end pe-3">Стоимость (руб.)</th>
+                    <th>Комментарий</th>
+                    <th class="text-center">Статус</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in order.items %}
+                <tr>
+                    <td class="ps-3">{{ loop.index }}</td>
+                    <td>{{ item.title }}</td>
+                    <td class="text-center">{{ item.duration }}</td>
+                    <td class="text-center">{{ item.actual_duration or 0 }}</td>
+                    <td class="text-end pe-3">{{ "{:,.0f}".format(item.price).replace(',', ' ') }}</td>
+                    <td class="small">{{ item.comment or '' }}</td>
+                    <td class="text-center">
+                        {% if item.is_done %}
+                            <span class="badge bg-success">Выполнено</span>
+                        {% else %}
+                            <span class="badge bg-secondary">В работе</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not order.items %}
+                <tr><td colspan="7" class="text-center text-muted py-3">Работы не указаны</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+
+        {% if order.parts %}
+        <div class="section-title">ЗАПЧАСТИ И МАТЕРИАЛЫ</div>
+        <table class="table table-sm table-items">
+            <thead>
+                <tr>
+                    <th class="ps-3">№</th>
+                    <th>Наименование</th>
+                    <th class="text-center">Кол-во</th>
+                    <th class="text-end">Цена (руб.)</th>
+                    <th class="text-end pe-3">Сумма (руб.)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for part in order.parts %}
+                <tr>
+                    <td class="ps-3">{{ loop.index }}</td>
+                    <td>{{ part.title }}</td>
+                    <td class="text-center">{{ part.quantity }} {{ part.unit }}</td>
+                    <td class="text-end">{{ "{:,.0f}".format(part.price).replace(',', ' ') }}</td>
+                    <td class="text-end pe-3">{{ "{:,.0f}".format(part.price * part.quantity).replace(',', ' ') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        <div class="row mt-4">
+            <div class="col-8">
+                <div class="p-3 border rounded bg-light small">
+                    <strong>Рекомендации и результаты осмотра:</strong><br>
+                    {{ order.inspection_results or 'Рекомендаций нет.' }}
+                </div>
+            </div>
+            <div class="col-4 text-end">
+                <div class="total-row p-3">
+                    ИТОГО К ОПЛАТЕ:<br>
+                    <span class="fs-3 text-primary">{{ "{:,.0f}".format(order.total_amount or 0).replace(',', ' ') }} РУБ.</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer-signatures">
+            <div class="row">
+                <div class="col-6">
+                    Исполнитель: <span class="signature-line ms-2"></span>
+                </div>
+                <div class="col-6 text-end">
+                    Заказчик: <span class="signature-line ms-2"></span>
+                </div>
+            </div>
+            <div class="row mt-2">
+                <div class="col-6 small text-muted">
+                    (М.П. при наличии)
+                </div>
+                <div class="col-6 text-end small text-muted">
+                    (С условиями и объемом работ согласен)
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

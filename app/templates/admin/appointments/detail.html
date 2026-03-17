@@ -1,0 +1,217 @@
+{% extends "admin/admin_base.html" %}
+{% block content %}
+<div class="container-fluid py-4">
+  <!-- Header -->
+  <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+    <div>
+      <span class="badge neon-border-blue text-white mono mb-2">APPOINTMENT_DATA.CFG</span>
+      <h1 class="h2 m-0 neon-text-blue mono">[ ЗАЯВКА №{{ appointment.id }} ]</h1>
+    </div>
+    <a href="{{ url_for('admin.appointments') }}" class="btn btn-outline-info mono">/назад_к_списку</a>
+  </div>
+
+  <div class="row g-4">
+    <!-- Main Interactive Form (Left Column) -->
+    <div class="col-lg-8">
+      <form method="POST" class="card bg-dark neon-border-blue shadow-lg mb-4">
+        {{ form.hidden_tag() }}
+        <div class="card-header border-secondary border-opacity-25 bg-transparent py-3">
+          <h5 class="card-title m-0 mono text-white"><i class="bi bi-pencil-square me-2"></i>РЕДАКТИРОВАНИЕ_ПАРАМЕТРОВ</h5>
+        </div>
+        <div class="card-body p-4">
+          <!-- Section 1: Core Params -->
+          <div class="row mb-4">
+            <div class="col-md-6 mb-3">
+              <label class="form-label mono text-secondary small">МАСТЕР</label>
+                {{ form.master_id(class="form-select bg-dark text-white border-secondary border-opacity-50 mono", style="color-scheme: dark;") }}
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label mono text-secondary small">> СТАТУС_СИСТЕМЫ</label>
+              {{ form.status(class="form-select bg-dark text-white border-secondary border-opacity-50 mono") }}
+            </div>
+            <div class="col-12">
+              <label class="form-label mono text-secondary small">> ВРЕМЯ_ПРИЕМА (ГГГГ-ММ-ДД чч:мм)</label>
+              {{ form.start_at(class="form-control bg-dark text-white border-secondary border-opacity-50 mono") }}
+            </div>
+          </div>
+
+          <!-- Section 2: Vehicle Data -->
+          <div class="row mb-4">
+            <div class="col-12 mb-3">
+              <h6 class="mono text-white border-bottom border-secondary border-opacity-25 pb-2">ДАННЫЕ_ОБ_ОБЪЕКТЕ (АВТОМОБИЛЬ)</h6>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label mono text-secondary small">> МАРКА</label>
+              {{ form.car_make(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="ГАЗ") }}
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label mono text-secondary small">> МОДЕЛЬ</label>
+              {{ form.car_model(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Соболь") }}
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label mono text-secondary small">> ГОД_ВЫПУСКА</label>
+              {{ form.car_year(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="2004") }}
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label mono text-secondary small">> ГОС_НОМЕР</label>
+              {{ form.car_number(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="A000AA77") }}
+            </div>
+          </div>
+
+          <!-- Section 3: Problem Description -->
+          <div class="row mb-4">
+            <div class="col-12">
+              <label class="form-label mono text-secondary small">> ОПИСАНИЕ_НЕИСПРАВНОСТЕЙ</label>
+              {{ form.problem_description(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", rows=4, placeholder="Введите описание проблемы...") }}
+            </div>
+          </div>
+
+          <div class="d-grid">
+            <button type="submit" class="btn btn-info py-3 mono fw-bold">
+              <i class="bi bi-save me-2"></i>СОХРАНИТЬ_ИЗМЕНЕНИЯ.EXE
+            </button>
+          </div>
+        </div>
+      </form>
+
+      <!-- Work Items List -->
+      <div class="card bg-dark neon-border-blue mb-4">
+        <div class="card-header border-secondary border-opacity-25 bg-transparent py-3 d-flex justify-content-between align-items-center">
+          <h5 class="card-title m-0 mono text-white"><i class="bi bi-list-check me-2"></i>ВЫБРАННЫЕ_УСЛУГИ</h5>
+          <span class="badge bg-info text-dark mono">{{ appointment.items|length }} ПОЗИЦИЙ</span>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 mono small">
+              <thead class="text-secondary border-secondary border-opacity-25">
+                <tr>
+                  <th class="ps-4">НАИМЕНОВАНИЕ</th>
+                  <th>ДЛИТЕЛЬНОСТЬ</th>
+                  <th>СТОИМОСТЬ</th>
+                  <th class="text-end pe-4">ДЕЙСТВИЯ</th>
+                </tr>
+              </thead>
+              <tbody class="border-secondary border-opacity-10">
+                {% for item in appointment.items %}
+                <tr>
+                  <td class="ps-4">> {{ item.work.title }}</td>
+                  <td>{{ item.duration_snapshot }} МИН</td>
+                  <td class="neon-text-blue">{{ item.price_snapshot or 0 }} РУБ.</td>
+                  <td class="text-end pe-4">
+                    <form action="{{ url_for('admin.appointment_item_delete', appointment_id=appointment.id, item_id=item.id) }}" method="POST" class="d-inline">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" class="btn btn-sm btn-outline-danger p-1">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+                {% endfor %}
+                {% if not appointment.items %}
+                <tr>
+                  <td colspan="4" class="text-center py-4 text-secondary opacity-50">СПЕЦИАЛИЗАЦИИ_НЕ_ВЫБРАНЫ.NULL</td>
+                </tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card-footer border-secondary border-opacity-25 bg-transparent py-3">
+          <form action="{{ url_for('admin.appointment_item_add', appointment_id=appointment.id) }}" method="POST" class="row g-2">
+            {{ item_form.hidden_tag() }}
+            <div class="col-sm-9">
+              {{ item_form.work_id(class="form-select bg-dark text-white border-secondary border-opacity-50 mono small") }}
+            </div>
+            <div class="col-sm-3">
+              <button type="submit" class="btn btn-outline-info w-100 mono small">ДОБАВИТЬ.ADD</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Info & Actions (Right Column) -->
+    <div class="col-lg-4">
+      <!-- Client Status Card -->
+      <div class="card bg-dark neon-border-blue mb-4">
+        <div class="card-header border-secondary border-opacity-25 bg-transparent py-3">
+          <h5 class="card-title m-0 mono text-white small">МЕТАДАННЫЕ_КЛИЕНТА</h5>
+        </div>
+        <div class="card-body mono small">
+          <div class="mb-3">
+            <span class="text-secondary d-block mb-1">> ИМЯ_КЛИЕНТА:</span>
+            <div class="ps-2 text-white fw-bold">{{ appointment.client.name }}</div>
+          </div>
+          <div class="mb-3">
+            <span class="text-secondary d-block mb-1">> ТЕЛЕФОН:</span>
+            <div class="ps-2 text-white fw-bold">{{ appointment.client.phone }}</div>
+          </div>
+          <div class="mb-3">
+            <span class="text-secondary d-block mb-1">> ДАТА_РЕГИСТРАЦИИ:</span>
+            <div class="ps-2 text-white opacity-75">{{ appointment.created_at.strftime('%d.%m.%Y %H:%M') }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Card (Work Order) -->
+      {% if appointment.work_order %}
+        <div class="card bg-dark neon-border-blue mb-4 border-info">
+          <div class="card-body text-center py-4">
+            <i class="bi bi-file-earmark-check fs-1 neon-text-blue mb-3 d-block"></i>
+            <h6 class="mono text-white mb-3">ЗАКАЗ-НАРЯД №{{ appointment.work_order.id }}</h6>
+            <a href="{{ url_for('admin.work_order_detail', order_id=appointment.work_order.id) }}" class="btn btn-outline-info w-100 mono">ОТКРЫТЬ_ЗАКАЗ.CFG</a>
+          </div>
+        </div>
+      {% elif appointment.status in ['confirmed', 'in_progress', 'done'] %}
+        <div class="card bg-dark neon-border-blue mb-4 border-warning border-opacity-50">
+          <div class="card-body text-center py-4">
+            <i class="bi bi-plus-circle fs-1 text-warning mb-3 d-block"></i>
+            <p class="mono text-white small mb-3">ДОСТУПНО_СОЗДАНИЕ_ЗАКАЗА</p>
+            <form action="{{ url_for('admin.work_order_create', appointment_id=appointment.id) }}" method="POST">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-warning w-100 mono text-dark fw-bold">СОЗДАТЬ_ЗАКАЗ_НАРЯД.EXE</button>
+            </form>
+          </div>
+        </div>
+      {% endif %}
+
+      <!-- Delete Zone -->
+      <div class="card bg-dark border-danger border-opacity-50">
+        <div class="card-header border-danger border-opacity-25 bg-transparent py-3">
+          <h5 class="card-title m-0 mono text-danger small">КРИТИЧЕСКИЙ_СЕКТОР</h5>
+        </div>
+        <div class="card-body">
+          <p class="mono text-danger small mb-3">> ВНИМАНИЕ: ДАННЫЕ_БУДУТ_УТЕРЯНЫ</p>
+          <button type="button" class="btn btn-outline-danger w-100 mono small" data-bs-toggle="modal" data-bs-target="#deleteModal">
+            УДАЛИТЬ_ЗАЯВКУ.SH
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content bg-dark neon-border-pink">
+      <div class="modal-header border-secondary border-opacity-25">
+        <h5 class="modal-title mono text-white">ПОДТВЕРЖДЕНИЕ_УДАЛЕНИЯ</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body mono text-white py-4">
+        ВЫ_УВЕРЕНЫ, ЧТО_ХОТИТЕ_БЕЗВОЗВРАТНО_УДАЛИТЬ_ЗАЯВКУ_№{{ appointment.id }}?
+        <br><br>
+        <span class="text-danger small">> СВЯЗАННЫЕ_ЗАКАЗ_НАРЯДЫ_ТАКЖЕ_БУДУТ_УДАЛЕНЫ.</span>
+      </div>
+      <div class="modal-footer border-secondary border-opacity-25">
+        <button type="button" class="btn btn-outline-secondary mono" data-bs-dismiss="modal">ОТМЕНА</button>
+        <form action="{{ url_for('admin.appointment_delete', appointment_id=appointment.id) }}" method="POST">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-danger mono">УДАЛИТЬ_СЕЙЧАС.EXE</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

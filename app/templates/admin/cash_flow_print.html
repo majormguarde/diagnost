@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Книга приходов и расходов</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: #fff;
+            color: #000;
+            font-family: "Segoe UI", Arial, sans-serif;
+            font-size: 12px;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 16px;
+        }
+        .title {
+            font-weight: 700;
+            font-size: 20px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .meta {
+            font-size: 12px;
+            margin-bottom: 2px;
+        }
+        .cards {
+            display: flex;
+            gap: 16px;
+            margin: 14px 0;
+        }
+        .card-item {
+            border: 1px solid #000;
+            padding: 10px 12px;
+            min-width: 190px;
+        }
+        .card-label {
+            font-size: 11px;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+        .card-value {
+            font-size: 20px;
+            font-weight: 700;
+        }
+        .table td, .table th {
+            border: 1px solid #000 !important;
+            vertical-align: middle;
+            padding: 6px 8px;
+        }
+        .table thead th {
+            background: #f2f2f2 !important;
+        }
+        .no-print {
+            margin-bottom: 16px;
+        }
+        @media print {
+            .no-print { display: none !important; }
+            body { margin: 0; padding: 0; }
+            .container { max-width: 100%; width: 100%; padding: 0; }
+            @page { margin: 12mm; }
+        }
+    </style>
+</head>
+<body onload="window.print()">
+    <div class="container">
+        <div class="no-print d-flex justify-content-between">
+            <a href="{{ url_for('admin.cash_flow', start_date=start_date, end_date=end_date) }}" class="btn btn-secondary">← Назад</a>
+            <button onclick="window.print()" class="btn btn-primary">Печать / PDF</button>
+        </div>
+
+        <div class="title">Книга приходов и расходов</div>
+        <div class="meta"><strong>Организация:</strong> {{ settings.name or "—" }}</div>
+        <div class="meta"><strong>Период:</strong> {{ start_date }} — {{ end_date }}</div>
+        <div class="meta"><strong>Дата печати:</strong> {{ printed_at.strftime('%d.%m.%Y %H:%M') }}</div>
+
+        <div class="cards">
+            <div class="card-item">
+                <div class="card-label">Общий приход</div>
+                <div class="card-value">{{ total_income }} руб.</div>
+            </div>
+            <div class="card-item">
+                <div class="card-label">Общий расход</div>
+                <div class="card-value">{{ total_expense }} руб.</div>
+            </div>
+            <div class="card-item">
+                <div class="card-label">Баланс</div>
+                <div class="card-value">{{ balance }} руб.</div>
+            </div>
+        </div>
+
+        <table class="table table-sm">
+            <thead>
+                <tr>
+                    <th style="width:150px;">Дата</th>
+                    <th style="width:190px;">Категория</th>
+                    <th>Описание</th>
+                    <th style="width:120px;" class="text-end">Приход</th>
+                    <th style="width:120px;" class="text-end">Расход</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in entries %}
+                    <tr>
+                        <td>{{ entry.date.strftime('%d.%m.%Y %H:%M') }}</td>
+                        <td>{{ entry.category }}</td>
+                        <td>
+                            {{ entry.description }}
+                            {% if entry.work_order_id %} (#{{ entry.work_order_id }}){% endif %}
+                        </td>
+                        <td class="text-end">{% if entry.amount > 0 %}{{ entry.amount }} руб.{% else %}-{% endif %}</td>
+                        <td class="text-end">{% if entry.amount < 0 %}{{ entry.amount | abs }} руб.{% else %}-{% endif %}</td>
+                    </tr>
+                {% endfor %}
+                {% if not entries %}
+                    <tr>
+                        <td colspan="5" class="text-center py-3">Нет записей за выбранный период.</td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

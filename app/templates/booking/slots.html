@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% set seo_title = "Выбор времени — " ~ org_settings.name %}
+{% set seo_description = "Подтверждение времени визита в сервис для диагностики и ремонта." %}
+{% set seo_robots = "noindex,nofollow" %}
+{% set seo_canonical = request.base_url %}
+
+{% block content %}
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-lg-6">
+      <div class="text-center mb-5">
+        <h1 class="section-title">Выбор времени</h1>
+        <p class="text-muted">Шаг 2: Выберите удобное время для визита</p>
+      </div>
+
+      <div class="card border-0 shadow-sm rounded-4 mb-4 overflow-hidden">
+        <div class="card-body p-4 bg-light border-bottom">
+          <div class="row g-3">
+            <div class="col-sm-6">
+              <div class="small text-muted mb-1">Мастер</div>
+              <div class="fw-bold"><i class="bi bi-person-badge me-2 text-primary"></i>{{ master.name }}</div>
+            </div>
+            <div class="col-sm-6">
+              <div class="small text-muted mb-1">Дата</div>
+              <div class="fw-bold"><i class="bi bi-calendar-event me-2 text-primary"></i>{{ date_value.strftime("%d.%m.%Y") }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-body p-4">
+          {% if no_slots %}
+            <div class="text-center py-4">
+              <div class="icon-box mx-auto mb-3 bg-warning-subtle text-warning">
+                <i class="bi bi-calendar-x"></i>
+              </div>
+              <h4>Нет свободных окон</h4>
+              <p class="text-muted">К сожалению, на выбранную дату у мастера нет свободного времени. Пожалуйста, выберите другой день.</p>
+              <a class="btn btn-outline-primary rounded-pill px-4" href="{{ url_for('booking.step1') }}">
+                <i class="bi bi-arrow-left me-2"></i>Вернуться к выбору даты
+              </a>
+            </div>
+          {% else %}
+            <form method="post" action="{{ url_for('booking.confirm') }}" class="card-body p-4 p-md-5">
+              {{ form.hidden_tag() }}
+              <input type="hidden" name="master_id" value="{{ master.id }}">
+              <input type="hidden" name="date" value="{{ date_value.isoformat() }}">
+              <input type="hidden" name="car_make" value="{{ car_make }}">
+              <input type="hidden" name="car_model" value="{{ car_model }}">
+              <input type="hidden" name="car_year" value="{{ car_year }}">
+              <input type="hidden" name="car_number" value="{{ car_number }}">
+              <input type="hidden" name="problem_description" value="{{ problem_description }}">
+
+              <div class="row g-4">
+                <label class="form-label fw-bold mb-3">Доступное время начала</label>
+                <div class="row g-2">
+                  {% for val, label in form.start_slot_id.choices %}
+                    <div class="col-6">
+                      <input type="radio" class="btn-check" name="start_slot_id" id="slot_{{ val }}" value="{{ val }}" required>
+                      <label class="btn btn-outline-primary w-100 py-3 rounded-3" for="slot_{{ val }}">
+                        <i class="bi bi-clock me-2"></i>{{ label }}
+                      </label>
+                    </div>
+                  {% endfor %}
+                </div>
+              </div>
+
+              <div class="d-grid gap-2 mt-5">
+                <button type="submit" class="btn btn-primary btn-lg rounded-pill shadow">
+                  Подтвердить заявку <i class="bi bi-check2-circle ms-2"></i>
+                </button>
+                <a class="btn btn-link text-muted text-decoration-none" href="{{ url_for('booking.step1') }}">
+                  <i class="bi bi-arrow-left me-2"></i>Изменить параметры
+                </a>
+              </div>
+            </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

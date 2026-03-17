@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% set seo_title = "Контакты и запись — " ~ org_settings.name %}
+{% set seo_description = "Адрес, телефон, график работы и карта проезда. Быстрая запись на диагностику и ремонт автоэлектрики." %}
+{% set seo_keywords = "контакты автосервиса, адрес автосервиса, запись на диагностику" %}
+{% set seo_canonical = url_for('public.contacts', _external=True) %}
+
+{% block head_extra %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Как записаться на диагностику?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Оставьте онлайн-заявку на сайте или позвоните по телефону {{ org_settings.phone or '+7 (999) 000-00-00' }}."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Какой у вас график работы?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "{{ org_settings.work_hours or 'Пн-Сб: 09:00 - 20:00' }}"
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Где вы находитесь?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "{{ org_settings.address or 'г. Москва, ул. Автомобилистов, 15' }}"
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Даете ли вы рекомендации после диагностики?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Да, после диагностики объясняем причины неисправности и даем прозрачные рекомендации по ремонту."
+      }
+    }
+  ]
+}
+</script>
+{% endblock %}
+
+{% block content %}
+<section class="py-5 scanline-container">
+  <div class="container">
+    <div class="text-center mb-5">
+      <span class="badge badge-tech mb-3 mono">ЛОКАЦИЯ_СИСТЕМЫ: ДАННЫЕ_НАЙДЕНЫ</span>
+      <h1 class="section-title">CONTACTS.CFG</h1>
+      <p class="lead text-secondary mono">> Инициализация протоколов связи...<br>> Статус: Доступен для соединения.</p>
+    </div>
+
+    <div class="row g-5">
+      <div class="col-lg-5">
+        <div class="feature-card h-100">
+          <div class="contact-item">
+            <span class="contact-label mono">[ АДРЕС ]</span>
+            <div class="contact-value mono">{{ org_settings.address or "г. Москва, ул. Автомобилистов, 15" }}</div>
+          </div>
+          
+          <div class="contact-item">
+            <span class="contact-label mono">[ ТЕЛЕФОН ]</span>
+            <div class="contact-value mono neon-text-blue">{{ org_settings.phone or "+7 (999) 000-00-00" }}</div>
+          </div>
+
+          <div class="contact-item">
+            <span class="contact-label mono">[ ПОЧТА ]</span>
+            <div class="contact-value mono">{{ org_settings.email or "info@diagnost.ru" }}</div>
+          </div>
+
+          <div class="contact-item">
+            <span class="contact-label mono">[ ГРАФИК_РАБОТЫ ]</span>
+            <div class="contact-value mono">
+              {{ org_settings.work_hours or "Пн-Сб: 09:00 - 20:00" }}
+            </div>
+          </div>
+
+          <div class="mt-5">
+            <div class="d-grid gap-2">
+              <a href="tel:{{ (org_settings.phone or '+79990000000')|replace(' ', '')|replace('(', '')|replace(')', '')|replace('-', '') }}" class="btn btn-outline-info mono">
+                <i class="bi bi-telephone me-2"></i>/позвонить
+              </a>
+              <a href="mailto:{{ org_settings.email or 'info@diagnost.ru' }}" class="btn btn-outline-info mono">
+                <i class="bi bi-envelope me-2"></i>/написать_email
+              </a>
+              <a href="{{ url_for('booking.step1') }}" class="btn btn-neon mono">
+                [ ОСТАВИТЬ_ЗАЯВКУ.EXE ]
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-7">
+        <div class="feature-card h-100 p-0 overflow-hidden" style="min-height: 450px;">
+          <!-- Placeholder for map -->
+          <div class="h-100 d-flex align-items-center justify-content-center flex-column text-center p-5 bg-dark position-relative">
+            <div class="mb-4">
+              <a href="#" data-bs-toggle="modal" data-bs-target="#mapModal" class="text-decoration-none">
+                <i class="bi bi-geo-alt neon-text-blue blink" style="font-size: 4rem; cursor: pointer;"></i>
+              </a>
+            </div>
+            <h5 class="mono mb-3 neon-text-blue">КАРТА_РЕНДЕРИНГ_ГОТОВ</h5>
+            <div class="mono text-muted small" style="max-width: 300px;">
+              [ СТАТУС: КООРДИНАТЫ_ПОЛУЧЕНЫ ]<br>
+              Нажмите на иконку выше, чтобы открыть интерактивную карту с нашей геометкой.
+            </div>
+            <div class="mt-4 w-100 px-5">
+              <div class="progress bg-dark neon-border-blue" style="height: 5px;">
+                <div class="progress-bar bg-info" style="width: 100%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="row g-4 mt-1">
+      <div class="col-lg-4">
+        <div class="feature-card h-100 p-4">
+          <h5 class="mono h6 mb-3">КАК_ДОБРАТЬСЯ</h5>
+          <p class="mono small text-white opacity-75 mb-0">За 10–15 минут от центра города. Рядом удобный подъезд и парковочные места для клиентов.</p>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="feature-card h-100 p-4">
+          <h5 class="mono h6 mb-3">ПРИЕМ_АВТО</h5>
+          <p class="mono small text-white opacity-75 mb-0">Принимаем легковые и коммерческие автомобили по предварительной записи и в порядке живой очереди.</p>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="feature-card h-100 p-4">
+          <h5 class="mono h6 mb-3">ОТЧЕТ_ПО_РАБОТАМ</h5>
+          <p class="mono small text-white opacity-75 mb-0">После диагностики объясняем причины неисправности и даем прозрачные рекомендации по ремонту.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

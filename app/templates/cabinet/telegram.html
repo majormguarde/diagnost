@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% set seo_title = "Telegram-бот — " ~ org_settings.name %}
+{% set seo_description = "Привязка Telegram для уведомлений и документов." %}
+{% set seo_robots = "noindex,nofollow" %}
+{% set seo_canonical = url_for('cabinet.telegram', _external=True) %}
+{% block content %}
+<div class="container py-4">
+    <div class="row">
+        <div class="col-md-3">
+            <div class="list-group mb-4 shadow-sm">
+                <a href="{{ url_for('cabinet.index') }}" class="list-group-item list-group-item-action">Мои заявки и заказы</a>
+                <a href="{{ url_for('cabinet.telegram') }}" class="list-group-item list-group-item-action active">Telegram-бот</a>
+                <a href="{{ url_for('auth.logout') }}" class="list-group-item list-group-item-action text-danger">Выйти</a>
+            </div>
+        </div>
+        <div class="col-md-9">
+            <h2 class="mb-4">Telegram-бот</h2>
+            
+            <div class="card shadow-sm mb-4">
+                <div class="card-body">
+                    <h5 class="card-title">Связь с аккаунтом</h5>
+                    <p class="card-text">Привяжите свой Telegram, чтобы получать уведомления и просматривать документы прямо в мессенджере.</p>
+                    
+                    {% if link and link.is_active %}
+                        <div class="alert alert-success d-flex align-items-center">
+                            <i class="bi bi-check-circle-fill me-2 fs-4"></i>
+                            <div>
+                                <strong>Ваш аккаунт привязан!</strong><br>
+                                Вы можете пользоваться ботом: <a href="https://t.me/{{ config.TELEGRAM_BOT_NAME or 'AutoDiagBot' }}" target="_blank">@{{ config.TELEGRAM_BOT_NAME or 'AutoDiagBot' }}</a>
+                            </div>
+                        </div>
+                    {% else %}
+                        <div class="alert alert-warning">
+                            <strong>Аккаунт не привязан.</strong> Сгенерируйте код и отправьте его боту.
+                        </div>
+                        
+                        <div class="my-4 text-center">
+                            <form action="{{ url_for('cabinet.generate_telegram_token') }}" method="POST">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-primary btn-lg">Сгенерировать код привязки</button>
+                            </form>
+                        </div>
+                        
+                        <div class="mt-4">
+                            <h6>Как привязать:</h6>
+                            <ol>
+                                <li>Нажмите кнопку выше, чтобы получить код.</li>
+                                <li>Перейдите в бот: <a href="https://t.me/{{ config.TELEGRAM_BOT_NAME or 'AutoDiagBot' }}" target="_blank">@{{ config.TELEGRAM_BOT_NAME or 'AutoDiagBot' }}</a>.</li>
+                                <li>Отправьте команду <code>/start [ваш_код]</code>.</li>
+                            </ol>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
