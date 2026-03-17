@@ -106,3 +106,101 @@ python run.py
 - `/robots.txt`
 - `/sitemap.xml`
 
+## Production deploy
+
+Ниже пример базового продакшн-развертывания на Linux: `Nginx` как reverse proxy и `gunicorn` или `uWSGI` как WSGI-сервер.
+
+### Вариант A: gunicorn + nginx
+
+1) Установите gunicorn:
+
+```bash
+pip install gunicorn
+```
+
+2) Запуск приложения через gunicorn:
+
+```bash
+gunicorn -w 4 -b 127.0.0.1:8000 wsgi:app
+```
+
+3) Пример блока сайта в Nginx (`/etc/nginx/sites-available/diagnost`):
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.example;
+
+    client_max_body_size 25m;
+
+    location /static/ {
+        alias /opt/diagnost/app/static/;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+### Вариант B: uWSGI + nginx
+
+1) Установите uWSGI:
+
+```bash
+pip install uwsgi
+```
+
+2) Запуск uWSGI:
+
+```bash
+uwsgi --http 127.0.0.1:8000 --module wsgi:app --master --processes 4 --threads 2
+```
+
+3) Nginx-конфиг можно использовать тот же, что и для gunicorn.
+
+### Рекомендации для production
+
+- Используйте сильный `SECRET_KEY` в `.env`.
+- Храните БД и документы на постоянном диске с резервным копированием.
+- Включите HTTPS (Let’s Encrypt + certbot).
+- Запускайте WSGI-сервер под systemd/supervisor для автоперезапуска.
+- Не используйте `debug=True` в продакшене.
+
+## Troubleshooting
+
+### 1) `flask --app run.py init-db` не выполняется
+
+- Убедитесь, что активировано виртуальное окружение.
+- Проверьте установку зависимостей: `pip install -r requirements.txt`.
+- Проверьте, что команда запускается из корня проекта.
+
+### 2) Ошибка `ModuleNotFoundError` при запуске
+
+- Обычно проблема в неактивном `.venv` или неполной установке пакетов.
+- Повторно активируйте окружение и установите зависимости.
+
+### 3) Ошибка доступа к БД SQLite
+
+- Проверьте права на файл `diagnost.sqlite3` и директорию проекта.
+- Если задаете `DATABASE_URL`, убедитесь в корректности строки подключения.
+
+### 4) Не загружаются файлы / документы
+
+- Проверьте `DOCUMENTS_DIR` и права на запись.
+- Значение по умолчанию: `./var/documents`.
+
+### 5) 403 CSRF при отправке форм
+
+- Убедитесь, что формы рендерят `{{ form.hidden_tag() }}`.
+- Проверьте, что приложение открывается по одному и тому же домену/схеме, особенно за reverse proxy.
+
+### 6) В продакшене 502 Bad Gateway через Nginx
+
+- Проверьте, что gunicorn/uWSGI запущен и слушает ожидаемый порт.
+- Сверьте `proxy_pass` в Nginx с фактическим адресом WSGI-сервера.
+- Проверьте логи Nginx и процесса приложения.
