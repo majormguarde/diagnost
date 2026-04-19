@@ -4,7 +4,7 @@
   <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
     <div>
       <span class="badge neon-border-blue text-white mono mb-2">BANNER_EDITOR.EXE</span>
-      <h1 class="h2 m-0 neon-text-blue mono">[ {{ "РЕДАКТИРОВАТЬ" if banner.id else "ДОБАВИТЬ" }} БАННЕР ]</h1>
+      <h1 class="h2 m-0 neon-text-blue mono">{{ "РЕДАКТИРОВАТЬ" if banner.id else "ДОБАВИТЬ" }} БАННЕР</h1>
     </div>
     <a href="{{ url_for('admin.banners') }}" class="btn btn-outline-info mono">/назад_к_списку</a>
   </div>

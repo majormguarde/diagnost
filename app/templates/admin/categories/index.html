@@ -3,10 +3,10 @@
 <div class="container-fluid py-4">
   <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
     <div>
-      <span class="badge neon-border-blue text-white mono mb-2">SPECIALIZATION_CATEGORIES.DB</span>
-      <h1 class="h2 m-0 neon-text-blue mono">[ КАТЕГОРИИ СПЕЦИАЛИЗАЦИЙ ]</h1>
+      <span class="badge neon-border-blue text-white mono mb-2">OPERATION_CATEGORIES.DB</span>
+      <h1 class="h2 m-0 neon-text-blue mono">КАТЕГОРИИ ОПЕРАЦИЙ</h1>
     </div>
-    <a href="{{ url_for('admin.category_edit') }}" class="btn btn-outline-info mono">/добавить_категорию</a>
+    <a href="{{ url_for('admin.category_edit') }}" class="btn btn-outline-info mono">/добавить_категорию_операций</a>
   </div>
 
   <div class="card bg-dark neon-border-blue shadow-lg">
@@ -16,7 +16,8 @@
           <thead class="text-secondary border-secondary border-opacity-25">
             <tr>
               <th class="ps-4">ID</th>
-              <th>НАЗВАНИЕ_КАТЕГОРИИ</th>
+              <th>УЧАСТОК</th>
+              <th>НАЗВАНИЕ_КАТЕГОРИИ_ОПЕРАЦИИ</th>
               <th class="text-end pe-4">ДЕЙСТВИЯ</th>
             </tr>
           </thead>
@@ -24,6 +25,7 @@
             {% for cat in categories %}
               <tr>
                 <td class="ps-4">> {{ cat.id }}</td>
+                <td class="text-secondary">{{ cat.competency.title if cat.competency else "---" }}</td>
                 <td class="text-white fw-bold">{{ cat.title }}</td>
                 <td class="text-end pe-4">
                   <a href="{{ url_for('admin.category_edit', cat_id=cat.id) }}" class="btn btn-sm btn-outline-info mono">
@@ -33,9 +35,9 @@
               </tr>
             {% else %}
               <tr>
-                <td colspan="3" class="text-center py-5 text-secondary">
+                <td colspan="4" class="text-center py-5 text-secondary">
                   <i class="bi bi-folder-x fs-1 d-block mb-3 opacity-25"></i>
-                  <span class="text-secondary">КАТЕГОРИИ_ОТСУТСТВУЮТ.NULL</span>
+                  <span class="text-secondary">КАТЕГОРИИ_ОПЕРАЦИЙ_ОТСУТСТВУЮТ.NULL</span>
                 </td>
               </tr>
             {% endfor %}

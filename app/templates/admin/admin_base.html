@@ -193,23 +193,18 @@
             </h6>
             <ul class="nav flex-column mb-3">
               <li class="nav-item">
+                <a class="nav-link mono small {% if 'admin.client' in request.endpoint %}active neon-text-blue{% endif %}" href="{{ url_for('admin.clients') }}">
+                  <i class="bi bi-person-vcard me-2"></i>КЛИЕНТЫ
+                </a>
+              </li>
+              <li class="nav-item">
                 <a class="nav-link mono small {% if 'admin.master' in request.endpoint %}active neon-text-blue{% endif %}" href="{{ url_for('admin.masters') }}">
                   <i class="bi bi-people me-2"></i>МАСТЕРА
                 </a>
               </li>
               <li class="nav-item">
-                <a class="nav-link mono small {% if 'admin.competenc' in request.endpoint %}active neon-text-blue{% endif %}" href="{{ url_for('admin.competencies') }}">
-                  <i class="bi bi-award me-2"></i>СПЕЦИАЛИЗАЦИЯ
-                </a>
-              </li>
-              <li class="nav-item">
-                <a class="nav-link mono small {% if 'admin.work' in request.endpoint and 'order' not in request.endpoint %}active neon-text-blue{% endif %}" href="{{ url_for('admin.works') }}">
-                  <i class="bi bi-tools me-2"></i>СПЕЦИАЛИЗАЦИЯ
-                </a>
-              </li>
-              <li class="nav-item">
-                <a class="nav-link mono small {% if 'admin.category' in request.endpoint %}active neon-text-blue{% endif %}" href="{{ url_for('admin.categories') }}">
-                  <i class="bi bi-tags me-2"></i>КАТЕГОРИИ
+                <a class="nav-link mono small {% if request.endpoint == 'admin.work_tree' %}active neon-text-blue{% endif %}" href="{{ url_for('admin.work_tree') }}">
+                  <i class="bi bi-diagram-3-fill me-2"></i>РАБОТЫ
                 </a>
               </li>
             </ul>
@@ -237,6 +232,11 @@
               <li class="nav-item">
                 <a class="nav-link mono small {% if request.endpoint == 'admin.settings' %}active neon-text-blue{% endif %}" href="{{ url_for('admin.settings') }}">
                   <i class="bi bi-gear me-2"></i>НАСТРОЙКИ
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link mono small {% if request.endpoint == 'admin.contact' %}active neon-text-blue{% endif %}" href="{{ url_for('admin.contact') }}">
+                  <i class="bi bi-envelope-at me-2"></i>СВЯЗЬ
                 </a>
               </li>
             </ul>
@@ -267,5 +267,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/issue-video-hover.js') }}"></script>
   </body>
 </html>

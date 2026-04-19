@@ -4,25 +4,58 @@
 {% set seo_robots = "noindex,nofollow" %}
 {% set seo_canonical = url_for('auth.register', _external=True) %}
 {% block content %}
-  <h1 class="h3 mb-3">Регистрация</h1>
-  <form method="post" class="card card-body" style="max-width: 520px;">
-    {{ form.hidden_tag() }}
-    <div class="mb-3">
-      {{ form.phone.label(class="form-label") }}
-      {{ form.phone(class="form-control", placeholder="+7...") }}
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-lg-5 col-md-7">
+      <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+        <div class="card-body p-4 p-md-5 bg-white text-dark">
+          <h1 class="h3 mb-4 text-dark">Регистрация</h1>
+          <form method="post">
+            {{ form.hidden_tag() }}
+            <div class="mb-3">
+              {{ form.phone.label(class="form-label text-dark fw-semibold") }}
+              {{ form.phone(class="form-control form-control-lg", placeholder="+7...") }}
+              {% for error in form.phone.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+            <div class="mb-3">
+              {{ form.name.label(class="form-label text-dark fw-semibold") }}
+              {{ form.name(class="form-control form-control-lg") }}
+              {% for error in form.name.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+            <div class="mb-3">
+              {{ form.client_whatsapp.label(class="form-label text-dark fw-semibold") }}
+              {{ form.client_whatsapp(class="form-control form-control-lg", placeholder="Необязательно") }}
+              {% for error in form.client_whatsapp.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+            <div class="mb-3">
+              {{ form.client_telegram.label(class="form-label text-dark fw-semibold") }}
+              {{ form.client_telegram(class="form-control form-control-lg", placeholder="username") }}
+              {% for error in form.client_telegram.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+            <div class="mb-3">
+              {{ form.client_email.label(class="form-label text-dark fw-semibold") }}
+              {{ form.client_email(class="form-control form-control-lg", placeholder="email@…") }}
+              {% for error in form.client_email.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+            <div class="mb-3">
+              {{ form.password.label(class="form-label text-dark fw-semibold") }}
+              {{ form.password(class="form-control form-control-lg") }}
+              {% for error in form.password.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+            <div class="mb-4">
+              {{ form.password_confirm.label(class="form-label text-dark fw-semibold") }}
+              {{ form.password_confirm(class="form-control form-control-lg") }}
+              {% for error in form.password_confirm.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+            {{ form.submit(class="btn btn-primary btn-lg w-100 rounded-pill") }}
+          </form>
+          <div class="mt-4 text-center text-secondary">
+            Уже есть аккаунт?
+            <a href="{{ url_for('auth.login', next=request.args.get('next')) }}" class="text-decoration-none">Войти</a>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="mb-3">
-      {{ form.name.label(class="form-label") }}
-      {{ form.name(class="form-control") }}
-    </div>
-    <div class="mb-3">
-      {{ form.password.label(class="form-label") }}
-      {{ form.password(class="form-control") }}
-    </div>
-    <div class="mb-3">
-      {{ form.password_confirm.label(class="form-label") }}
-      {{ form.password_confirm(class="form-control") }}
-    </div>
-    {{ form.submit(class="btn btn-primary") }}
-  </form>
+  </div>
+</div>
 {% endblock %}

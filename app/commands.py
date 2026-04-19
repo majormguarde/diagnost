@@ -46,6 +46,47 @@ def register_commands(app) -> None:
         db.session.commit()
         click.echo(f"Admin created: {normalized}")
 
+    @app.cli.command("reset-admin")
+    def reset_admin() -> None:
+        db.create_all()
+
+        admin = db.session.execute(
+            db.select(User).where(User.role == "admin").order_by(User.id.asc())
+        ).scalar_one_or_none()
+
+        if not admin:
+            start = 79990000000
+            phone = ""
+            for i in range(0, 1000):
+                candidate = normalize_phone(f"+{start + i}")
+                if not candidate:
+                    continue
+                exists = db.session.execute(
+                    db.select(User.id).where(User.phone == candidate)
+                ).scalar_one_or_none()
+                if not exists:
+                    phone = candidate
+                    break
+            if not phone:
+                raise click.ClickException("Не удалось подобрать свободный телефон для admin-пользователя.")
+
+            admin = User(
+                role="admin",
+                phone=phone,
+                name="admin",
+                password_hash=generate_password_hash("admin123"),
+                is_active=True,
+                created_at=datetime.utcnow(),
+            )
+            db.session.add(admin)
+        else:
+            admin.name = "admin"
+            admin.is_active = True
+            admin.password_hash = generate_password_hash("admin123")
+
+        db.session.commit()
+        click.echo("Admin reset: admin/admin123")
+
     @app.cli.command("seed-demo")
     @click.option("--days", default=7, show_default=True, type=int)
     @click.option("--start-hour", default=10, show_default=True, type=int)
@@ -125,3 +166,21 @@ def register_commands(app) -> None:
 
         db.session.commit()
         click.echo(f"Seeded demo data. Slots created: {created}")
+
+    @app.cli.command("ensure-schema")
+    def ensure_schema() -> None:
+        """Добавляет недостающие колонки в SQLite (без отдельных миграций)."""
+        from sqlalchemy import inspect, text
+
+        engine = db.engine
+        if engine.dialect.name != "sqlite":
+            click.echo("ensure-schema: только для SQLite, пропуск.")
+            return
+        insp = inspect(engine)
+        cols = {c["name"] for c in insp.get_columns("appointments")}
+        if "win_number" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE appointments ADD COLUMN win_number VARCHAR(32)"))
+            click.echo("Добавлена колонка appointments.win_number")
+        else:
+            click.echo("Схема актуальна (appointments.win_number).")

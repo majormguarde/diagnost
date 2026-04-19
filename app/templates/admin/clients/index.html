@@ -1,0 +1,64 @@
+{% extends "admin/admin_base.html" %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+    <div>
+      <span class="badge neon-border-blue text-white mono mb-2">CLIENTS_DIRECTORY.DB</span>
+      <h1 class="h2 m-0 neon-text-blue mono">[ КЛИЕНТЫ ]</h1>
+    </div>
+    <a href="{{ url_for('admin.client_create') }}" class="btn btn-outline-info mono">/добавить_клиента</a>
+  </div>
+
+  <div class="card bg-dark neon-border-blue shadow-lg">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-dark table-hover align-middle mb-0 mono small">
+          <thead class="text-secondary border-secondary border-opacity-25">
+            <tr>
+              <th class="ps-4">КЛИЕНТ</th>
+              <th>ТЕЛЕФОН</th>
+              <th>СТАТУС</th>
+              <th>ДАТА РЕГИСТРАЦИИ</th>
+              <th class="text-end pe-4">ДЕЙСТВИЯ</th>
+            </tr>
+          </thead>
+          <tbody class="border-secondary border-opacity-10">
+            {% for client in clients %}
+            <tr>
+              <td class="ps-4">
+                <div class="text-white fw-bold">{{ client.name }}</div>
+                <div class="text-secondary smaller">ID: {{ client.id }}</div>
+              </td>
+              <td class="text-white">{{ client.phone }}</td>
+              <td>
+                {% if client.is_active %}
+                <span class="badge border border-success text-success bg-success bg-opacity-10 border-opacity-25">АКТИВЕН</span>
+                {% else %}
+                <span class="badge border border-danger text-danger bg-danger bg-opacity-10 border-opacity-25">ОТКЛЮЧЕН</span>
+                {% endif %}
+              </td>
+              <td class="text-secondary">{{ client.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+              <td class="text-end pe-4">
+                <div class="d-flex justify-content-end gap-2 flex-wrap">
+                  <a href="{{ url_for('admin.client_edit', user_id=client.id) }}" class="btn btn-sm btn-outline-info mono">
+                    EDIT.CFG
+                  </a>
+                  <form action="{{ url_for('admin.client_delete', user_id=client.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Удалить этого клиента? Действие необратимо.');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger mono">DELETE.EXE</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="5" class="text-center py-5 text-secondary">Клиенты пока не зарегистрированы</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,67 +1,394 @@
 {% extends "admin/admin_base.html" %}
 {% block content %}
-  <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+<div class="container-fluid py-4">
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4 border-bottom border-secondary border-opacity-25 pb-3">
     <div>
       <span class="badge neon-border-blue text-white mono mb-2">SYSTEM_OVERVIEW.EXE</span>
       <h1 class="h2 m-0 neon-text-blue mono">ДАШБОРД</h1>
     </div>
+    <div class="text-secondary mono small">
+      ГРАФИЧЕСКИЙ ОБЗОР ЗАГРУЗКИ И ТЕКУЩИХ ОПЕРАЦИЙ
+    </div>
   </div>
-  
+
   <div class="row g-4 mb-4">
-    <div class="col-md-3">
-      <div class="card bg-dark neon-border-blue shadow-lg h-100">
+    <div class="col-sm-6 col-xl-3">
+      <div class="card bg-dark neon-border-blue shadow-lg dashboard-metric h-100">
         <div class="card-body">
-          <h5 class="card-title text-secondary mono small mb-3">> ЗАЯВОК</h5>
-          <p class="card-text fs-2 neon-text-blue mono fw-bold">{{ appointments_count }}</p>
+          <div class="dashboard-icon"><i class="bi bi-calendar-event"></i></div>
+          <div class="text-secondary mono small mb-2">ЗАЯВОК</div>
+          <div class="display-6 text-white fw-bold mono">{{ appointments_count }}</div>
         </div>
       </div>
     </div>
-    <div class="col-md-3">
-      <div class="card bg-dark neon-border-blue shadow-lg h-100">
+    <div class="col-sm-6 col-xl-3">
+      <div class="card bg-dark neon-border-blue shadow-lg dashboard-metric h-100">
         <div class="card-body">
-          <h5 class="card-title text-secondary mono small mb-3">> МАСТЕРОВ</h5>
-          <p class="card-text fs-2 neon-text-blue mono fw-bold">{{ active_masters_count }}</p>
+          <div class="dashboard-icon"><i class="bi bi-people"></i></div>
+          <div class="text-secondary mono small mb-2">АКТИВНЫХ МАСТЕРОВ</div>
+          <div class="display-6 text-white fw-bold mono">{{ active_masters_count }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-xl-3">
+      <div class="card bg-dark neon-border-blue shadow-lg dashboard-metric h-100">
+        <div class="card-body">
+          <div class="dashboard-icon"><i class="bi bi-person-vcard"></i></div>
+          <div class="text-secondary mono small mb-2">КЛИЕНТОВ</div>
+          <div class="display-6 text-white fw-bold mono">{{ clients_count }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-xl-3">
+      <div class="card bg-dark neon-border-blue shadow-lg dashboard-metric h-100">
+        <div class="card-body">
+          <div class="dashboard-icon"><i class="bi bi-file-earmark-text"></i></div>
+          <div class="text-secondary mono small mb-2">ЗАКАЗ-НАРЯДОВ</div>
+          <div class="display-6 text-white fw-bold mono">{{ work_orders_count }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4 mb-4">
+    <div class="col-xl-8">
+      <div class="card bg-dark neon-border-blue shadow-lg h-100">
+        <div class="card-header bg-transparent border-secondary border-opacity-25 py-3">
+          <h5 class="card-title m-0 mono text-white">
+            <i class="bi bi-grid-3x3-gap me-2"></i>ЗАГРУЗКА МАСТЕРОВ НА 7 ДНЕЙ
+          </h5>
+        </div>
+        <div class="card-body">
+          <div class="dashboard-heatmap">
+            <div class="heatmap-grid heatmap-head">
+              <div class="heatmap-master text-secondary mono small">МАСТЕР</div>
+              {% for day in dashboard_days %}
+              <div class="heatmap-cell-title text-secondary mono small">
+                {{ day.strftime('%d.%m') }}<br>{{ ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'][day.weekday()] }}
+              </div>
+              {% endfor %}
+              <div class="heatmap-total text-secondary mono small">ИТОГО</div>
+            </div>
+            {% for row in master_load_rows %}
+            <div class="heatmap-grid">
+              <div class="heatmap-master text-white">{{ row.master.name }}</div>
+              {% for cell in row.cells %}
+              <div class="heatmap-box heatmap-{{ cell.level }}">
+                <div class="mono small">{{ cell.count }}</div>
+              </div>
+              {% endfor %}
+              <div class="heatmap-total text-white fw-bold mono">{{ row.weekly_total }}</div>
+            </div>
+            {% else %}
+            <div class="text-secondary mono">НЕТ ДАННЫХ ПО МАСТЕРАМ.</div>
+            {% endfor %}
+          </div>
+          <div class="d-flex flex-wrap gap-3 mt-4 mono small">
+            <span class="legend-item"><span class="legend-box heatmap-free"></span>Свободно</span>
+            <span class="legend-item"><span class="legend-box heatmap-low"></span>1 запись</span>
+            <span class="legend-item"><span class="legend-box heatmap-medium"></span>2 записи</span>
+            <span class="legend-item"><span class="legend-box heatmap-high"></span>3+ записи</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-xl-4">
+      <div class="card bg-dark neon-border-blue shadow-lg h-100">
+        <div class="card-header bg-transparent border-secondary border-opacity-25 py-3">
+          <h5 class="card-title m-0 mono text-white">
+            <i class="bi bi-pie-chart me-2"></i>СТАТУСЫ ЗАЯВОК
+          </h5>
+        </div>
+        <div class="card-body">
+          <div class="status-stack">
+            <div class="status-row">
+              <div class="status-label mono text-secondary">НОВЫЕ</div>
+              <div class="status-bar-wrap"><div class="status-bar bg-primary" style="width: {{ 8 + (appointment_status_counts['new'] * 12) }}px;"></div></div>
+              <div class="status-value mono text-white">{{ appointment_status_counts['new'] }}</div>
+            </div>
+            <div class="status-row">
+              <div class="status-label mono text-secondary">ПОДТВЕРЖДЕНЫ</div>
+              <div class="status-bar-wrap"><div class="status-bar bg-success" style="width: {{ 8 + (appointment_status_counts['confirmed'] * 12) }}px;"></div></div>
+              <div class="status-value mono text-white">{{ appointment_status_counts['confirmed'] }}</div>
+            </div>
+            <div class="status-row">
+              <div class="status-label mono text-secondary">В РАБОТЕ</div>
+              <div class="status-bar-wrap"><div class="status-bar bg-warning" style="width: {{ 8 + (appointment_status_counts['in_progress'] * 12) }}px;"></div></div>
+              <div class="status-value mono text-white">{{ appointment_status_counts['in_progress'] }}</div>
+            </div>
+            <div class="status-row">
+              <div class="status-label mono text-secondary">ЗАКРЫТЫ</div>
+              <div class="status-bar-wrap"><div class="status-bar bg-info" style="width: {{ 8 + (appointment_status_counts['done'] * 12) }}px;"></div></div>
+              <div class="status-value mono text-white">{{ appointment_status_counts['done'] }}</div>
+            </div>
+          </div>
+
+          <div class="dashboard-mini-grid mt-4">
+            <a href="{{ url_for('admin.appointments') }}" class="mini-action">
+              <i class="bi bi-calendar-week"></i>
+              <span>Заявки</span>
+            </a>
+            <a href="{{ url_for('admin.work_orders') }}" class="mini-action">
+              <i class="bi bi-receipt"></i>
+              <span>Наряды</span>
+            </a>
+            <a href="{{ url_for('admin.clients') }}" class="mini-action">
+              <i class="bi bi-person-vcard"></i>
+              <span>Клиенты</span>
+            </a>
+            <a href="{{ url_for('admin.masters') }}" class="mini-action">
+              <i class="bi bi-people"></i>
+              <span>Мастера</span>
+            </a>
+          </div>
         </div>
       </div>
     </div>
   </div>
 
   <div class="row g-4">
-    <div class="col-md-4">
-      <div class="card bg-dark border-secondary border-opacity-25 shadow-lg">
-        <div class="card-header bg-dark border-secondary border-opacity-25 text-secondary mono small">
-          > СПРАВОЧНИКИ
+    <div class="col-xl-7">
+      <div class="card bg-dark neon-border-blue shadow-lg h-100">
+        <div class="card-header bg-transparent border-secondary border-opacity-25 py-3">
+          <h5 class="card-title m-0 mono text-white">
+            <i class="bi bi-broadcast-pin me-2"></i>БЛИЖАЙШИЕ ВИЗИТЫ
+          </h5>
         </div>
-        <div class="list-group list-group-flush bg-dark">
-          <a href="{{ url_for('admin.masters') }}" class="list-group-item list-group-item-action bg-dark text-white mono small border-secondary border-opacity-10 py-3">
-            <i class="bi bi-people me-2"></i>МАСТЕРА
-          </a>
-          <a href="{{ url_for('admin.works') }}" class="list-group-item list-group-item-action bg-dark text-white mono small border-secondary border-opacity-10 py-3">
-            <i class="bi bi-tools me-2"></i>СПЕЦИАЛИЗАЦИЯ
-          </a>
-          <a href="{{ url_for('admin.categories') }}" class="list-group-item list-group-item-action bg-dark text-white mono small border-secondary border-opacity-10 py-3">
-            <i class="bi bi-tags me-2"></i>КАТЕГОРИИ_СПЕЦИАЛИЗАЦИЙ
-          </a>
+        <div class="card-body p-0">
+          {% if not upcoming_appointments %}
+          <div class="p-4 text-secondary mono">БЛИЖАЙШИХ ВИЗИТОВ НЕТ.</div>
+          {% else %}
+          <div class="table-responsive">
+            <table class="table table-dark table-hover align-middle mb-0 mono small">
+              <thead class="text-secondary border-secondary border-opacity-25">
+                <tr>
+                  <th class="ps-4">ВРЕМЯ</th>
+                  <th>КЛИЕНТ</th>
+                  <th>МАСТЕР</th>
+                  <th>СТАТУС</th>
+                </tr>
+              </thead>
+              <tbody class="border-secondary border-opacity-10">
+                {% for appointment in upcoming_appointments %}
+                <tr>
+                  <td class="ps-4 text-white">{{ appointment.visit_display_label() or appointment.start_at.strftime('%d.%m %H:%M') }}</td>
+                  <td class="text-white">{{ appointment.client.name if appointment.client else 'Клиент' }}</td>
+                  <td class="text-white">{{ appointment.master.name if appointment.master else 'Не назначен' }}</td>
+                  <td>
+                    {% set status_class = {
+                      'new': 'primary',
+                      'confirmed': 'success',
+                      'in_progress': 'warning',
+                      'done': 'info',
+                      'cancelled_by_admin': 'danger',
+                      'cancelled_by_client': 'secondary'
+                    }[appointment.status] if appointment.status in ['new','confirmed','in_progress','done','cancelled_by_admin','cancelled_by_client'] else 'secondary' %}
+                    <span class="badge border border-{{ status_class }} text-{{ status_class }} bg-{{ status_class }} bg-opacity-10 border-opacity-25">
+                      {{ appointment.status }}
+                    </span>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% endif %}
         </div>
       </div>
     </div>
-    <div class="col-md-4">
-      <div class="card bg-dark border-secondary border-opacity-25 shadow-lg">
-        <div class="card-header bg-dark border-secondary border-opacity-25 text-secondary mono small">
-          > ОПЕРАЦИИ
+
+    <div class="col-xl-5">
+      <div class="card bg-dark neon-border-blue shadow-lg h-100">
+        <div class="card-header bg-transparent border-secondary border-opacity-25 py-3">
+          <h5 class="card-title m-0 mono text-white">
+            <i class="bi bi-lightning-charge me-2"></i>БЫСТРЫЕ ПЕРЕХОДЫ
+          </h5>
         </div>
-        <div class="list-group list-group-flush bg-dark">
-          <a href="{{ url_for('admin.appointments') }}" class="list-group-item list-group-item-action bg-dark text-white mono small border-secondary border-opacity-10 py-3">
-            <i class="bi bi-calendar-event me-2"></i>ЗАЯВКИ_НА_ОБСЛУЖИВАНИЕ
-            {% if appointments_count > 0 %}
-              <span class="badge neon-border-blue text-white float-end">{{ appointments_count }}</span>
-            {% endif %}
-          </a>
-          <a href="{{ url_for('admin.work_orders') }}" class="list-group-item list-group-item-action bg-dark text-white mono small border-secondary border-opacity-10 py-3">
-            <i class="bi bi-file-earmark-text me-2"></i>ЗАКАЗ-НАРЯДЫ
-          </a>
+        <div class="card-body">
+          <div class="quick-links">
+            <a href="{{ url_for('admin.appointments') }}" class="quick-link-card">
+              <i class="bi bi-calendar-event"></i>
+              <span>Журнал заявок</span>
+            </a>
+            <a href="{{ url_for('admin.work_orders') }}" class="quick-link-card">
+              <i class="bi bi-file-earmark-text"></i>
+              <span>Заказ-наряды</span>
+            </a>
+            <a href="{{ url_for('admin.clients') }}" class="quick-link-card">
+              <i class="bi bi-person-lines-fill"></i>
+              <span>Справочник клиентов</span>
+            </a>
+            <a href="{{ url_for('admin.cash_flow') }}" class="quick-link-card">
+              <i class="bi bi-cash-stack"></i>
+              <span>Книга приходов</span>
+            </a>
+            <a href="{{ url_for('admin.masters') }}" class="quick-link-card">
+              <i class="bi bi-people"></i>
+              <span>Мастера</span>
+            </a>
+            <a href="{{ url_for('admin.settings') }}" class="quick-link-card">
+              <i class="bi bi-gear"></i>
+              <span>Настройки</span>
+            </a>
+          </div>
         </div>
       </div>
     </div>
   </div>
+</div>
+
+<style>
+  .dashboard-metric {
+    position: relative;
+    overflow: hidden;
+  }
+  .dashboard-metric .card-body {
+    position: relative;
+    min-height: 150px;
+  }
+  .dashboard-icon {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    font-size: 2rem;
+    color: rgba(0, 243, 255, 0.22);
+  }
+  .dashboard-heatmap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .heatmap-grid {
+    display: grid;
+    grid-template-columns: minmax(140px, 1.3fr) repeat(7, minmax(52px, 1fr)) minmax(60px, 0.7fr);
+    gap: 0.5rem;
+    align-items: stretch;
+  }
+  .heatmap-head {
+    align-items: end;
+  }
+  .heatmap-master,
+  .heatmap-total,
+  .heatmap-cell-title {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+  .heatmap-master {
+    justify-content: flex-start;
+    padding-left: 0.5rem;
+  }
+  .heatmap-box {
+    min-height: 56px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+  }
+  .heatmap-free {
+    background: rgba(255, 255, 255, 0.05);
+  }
+  .heatmap-low {
+    background: rgba(255, 193, 7, 0.35);
+  }
+  .heatmap-medium {
+    background: rgba(255, 140, 0, 0.5);
+  }
+  .heatmap-high {
+    background: rgba(220, 53, 69, 0.72);
+  }
+  .legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: rgba(255, 255, 255, 0.75);
+  }
+  .legend-box {
+    width: 18px;
+    height: 18px;
+    border-radius: 6px;
+    display: inline-block;
+  }
+  .status-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .status-row {
+    display: grid;
+    grid-template-columns: 120px 1fr 32px;
+    gap: 0.75rem;
+    align-items: center;
+  }
+  .status-bar-wrap {
+    height: 12px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .status-bar {
+    height: 100%;
+    border-radius: 999px;
+  }
+  .dashboard-mini-grid,
+  .quick-links {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+  .mini-action,
+  .quick-link-card {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    padding: 1rem;
+    color: #fff;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: rgba(255, 255, 255, 0.03);
+    transition: 0.2s ease;
+  }
+  .mini-action:hover,
+  .quick-link-card:hover {
+    border-color: rgba(0, 243, 255, 0.35);
+    background: rgba(0, 243, 255, 0.05);
+    color: #fff;
+  }
+  .mini-action i,
+  .quick-link-card i {
+    font-size: 1.1rem;
+    color: var(--neon-blue);
+  }
+  @media (max-width: 991.98px) {
+    .heatmap-grid {
+      grid-template-columns: minmax(120px, 1.3fr) repeat(7, minmax(42px, 1fr)) minmax(48px, 0.7fr);
+      gap: 0.35rem;
+    }
+    .heatmap-box {
+      min-height: 46px;
+      border-radius: 10px;
+    }
+  }
+  @media (max-width: 767.98px) {
+    .dashboard-mini-grid,
+    .quick-links {
+      grid-template-columns: 1fr;
+    }
+    .status-row {
+      grid-template-columns: 1fr;
+    }
+    .heatmap-grid {
+      min-width: 760px;
+    }
+    .dashboard-heatmap {
+      overflow-x: auto;
+      padding-bottom: 0.25rem;
+    }
+  }
+</style>
 {% endblock %}

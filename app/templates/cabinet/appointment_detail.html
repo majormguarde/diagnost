@@ -3,92 +3,1008 @@
 {% set seo_description = "Детали заявки клиента." %}
 {% set seo_robots = "noindex,nofollow" %}
 {% block content %}
-  <h1 class="h3 mb-3">Заявка №{{ appointment.id }}</h1>
+{% set appt_status_names = {
+  'new': 'Новая',
+  'negotiation': 'Согласование',
+  'confirmed': 'Подтверждена',
+  'in_progress': 'В работе',
+  'done': 'Выполнена',
+  'cancelled_by_admin': 'Отменена администратором',
+  'cancelled_by_client': 'Отменена клиентом'
+} %}
+{% set appt_status_classes = {
+  'new': 'primary',
+  'negotiation': 'primary',
+  'confirmed': 'success',
+  'in_progress': 'warning',
+  'done': 'info',
+  'cancelled_by_admin': 'danger',
+  'cancelled_by_client': 'secondary'
+} %}
+{% set is_editable = appointment.status in ['new', 'negotiation'] %}
 
-  <div class="card card-body mb-3">
-    <div><strong>Мастер:</strong> {{ appointment.master.name if appointment.master else "" }}</div>
-    <div><strong>Начало:</strong> {{ appointment.start_at.strftime("%d.%m.%Y %H:%M") }}</div>
-    <div><strong>Окончание:</strong> {{ appointment.end_at.strftime("%H:%M") }}</div>
-    <div><strong>Статус:</strong> {{ appointment.status }}</div>
-    {% if appointment.comment %}
-      <div class="mt-2"><strong>Комментарий:</strong> {{ appointment.comment }}</div>
-    {% endif %}
-  </div>
+<div class="container-fluid py-4">
+  <div class="row g-4">
+    <div class="col-xl-3 col-lg-4">
+      {% include "cabinet/_sidebar.html" %}
+    </div>
 
-  <h2 class="h5 mb-2">Работы</h2>
-  {% if not appointment.items %}
-    <div class="alert alert-secondary">Работы не указаны.</div>
-  {% else %}
-    <ul class="list-group mb-4" style="max-width: 760px;">
-      {% for item in appointment.items %}
-        <li class="list-group-item d-flex justify-content-between">
-          <span>{{ item.work.title }}</span>
-          <span class="text-muted">{{ item.duration_snapshot or item.work.duration_min }} мин</span>
-        </li>
-      {% endfor %}
-    </ul>
-  {% endif %}
+    <div class="col-xl-9 col-lg-8">
+      <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+        <div>
+          <span class="badge neon-border-blue text-white mono mb-2">APPOINTMENT_CARD.EXE</span>
+          <h1 class="h2 m-0 neon-text-blue mono">[ ЗАЯВКА №{{ appointment.id }} ]</h1>
+        </div>
+        <a href="{{ url_for('cabinet.index') }}" class="btn btn-outline-info mono">
+          <i class="bi bi-arrow-left me-2"></i>НАЗАД_К_КАБИНЕТУ
+        </a>
+      </div>
 
-  {% if appointment.work_order and appointment.work_order.documents %}
-    <h2 class="h5 mb-3">Фотоотчет и документы</h2>
-    <div class="row g-3 mb-4" style="max-width: 760px;">
-      {% for doc in appointment.work_order.documents %}
-        <div class="col-6 col-md-4">
-          <div class="card h-100 shadow-sm border-0">
-            {% if doc.mime.startswith('image/') %}
-              <a href="#" data-bs-toggle="modal" data-bs-target="#imageViewerModal" data-bs-image="{{ url_for('cabinet.download_document', doc_id=doc.id) }}" data-bs-title="{{ doc.filename }}">
-                <img src="{{ url_for('cabinet.download_document', doc_id=doc.id) }}" class="card-img-top" alt="{{ doc.filename }}" style="aspect-ratio: 1/1; object-fit: cover;">
-              </a>
-            {% else %}
-              <div class="card-body text-center py-4">
-                <i class="bi bi-file-earmark-text fs-1 text-primary"></i>
-                <div class="mt-2 small text-truncate">{{ doc.filename }}</div>
-              </div>
-            {% endif %}
-            <div class="card-footer bg-white border-top-0 text-center">
-              <a href="{{ url_for('cabinet.download_document', doc_id=doc.id) }}" class="btn btn-sm btn-outline-primary w-100">
-                <i class="bi bi-download me-1"></i>Скачать
-              </a>
+      <div class="row g-4 mb-4">
+        <div class="col-md-6">
+          <div class="card bg-dark neon-border-blue shadow-lg h-100">
+            <div class="card-body">
+              <div class="text-secondary mono small mb-2">СТАТУС</div>
+              <span id="cabinet-appt-status-badge" class="badge border border-{{ appt_status_classes.get(appointment.status, 'secondary') }} text-{{ appt_status_classes.get(appointment.status, 'secondary') }} bg-{{ appt_status_classes.get(appointment.status, 'secondary') }} bg-opacity-10 border-opacity-25 fw-bold fs-5 px-3 py-2">
+                {{ appt_status_names.get(appointment.status, appointment.status) }}
+              </span>
+              <div class="mt-4 text-secondary mono small mb-2">МАСТЕР</div>
+              <div class="text-white">{{ appointment.master.name if appointment.master else "Не назначен" }}</div>
             </div>
           </div>
         </div>
+        <div class="col-md-6">
+          <div class="card bg-dark neon-border-blue shadow-lg h-100">
+            <div class="card-body">
+              <div class="text-secondary mono small mb-2">ВРЕМЯ ВИЗИТА</div>
+              <div class="text-white cabinet-visit-time-stack" id="cabinet-appt-visit-time">
+                {% for line in appointment.visit_display_lines() %}
+                <div class="cabinet-visit-time-line">{{ line }}</div>
+                {% else %}
+                <div class="cabinet-visit-time-line">—</div>
+                {% endfor %}
+              </div>
+              <div class="mt-4 text-secondary mono small mb-2">АВТОМОБИЛЬ</div>
+              <div class="text-white">{{ [appointment.car_make, appointment.car_model]|select|join(' ') or "Не указан" }}</div>
+              {% if appointment.car_year or appointment.car_number %}
+              <div class="text-secondary smaller">{{ appointment.car_year or '' }} {{ appointment.car_number or '' }}</div>
+              {% endif %}
+              {% if is_editable %}
+              <div class="mt-3 pt-2 border-top border-secondary border-opacity-25">
+                <label class="text-secondary mono small d-block mb-1" for="cabinet-appt-win-input">WIN НОМЕР</label>
+                <div class="d-flex flex-wrap gap-2 align-items-stretch">
+                  <input type="text" id="cabinet-appt-win-input" class="form-control form-control-sm bg-dark text-white border-secondary border-opacity-50 mono flex-grow-1" maxlength="32" value="{{ appointment.win_number or '' }}" placeholder="0–9, A–Z" title="Только цифры и латинские буквы A–Z" pattern="[A-Z0-9]*" inputmode="text" autocomplete="off" autocorrect="off" spellcheck="false">
+                  <button type="button" id="cabinet-appt-win-save" class="btn btn-sm btn-outline-info mono">Сохранить</button>
+                </div>
+                <div id="cabinet-appt-win-msg" class="mono small mt-1" style="min-height: 1.1rem;"></div>
+              </div>
+              {% elif appointment.win_number %}
+              <div class="text-secondary smaller mono mt-2">WIN: {{ appointment.win_number }}</div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card bg-dark neon-border-blue shadow-lg mb-4">
+        <div class="card-header bg-transparent border-secondary border-opacity-25 py-3">
+          <h5 class="card-title m-0 mono text-white">
+            <i class="bi bi-clipboard2-pulse me-2"></i>ОПИСАНИЯ НЕИСПРАВНОСТЕЙ
+          </h5>
+        </div>
+        <div class="card-body">
+          {% set issues = appointment.problem_items() %}
+
+          <div class="mb-3">
+            {% if is_editable %}
+              <div id="issues-editor"></div>
+              <div class="d-flex gap-2 align-items-center mt-2">
+                <button type="button" id="issues-add-btn" class="btn btn-outline-info mono small" title="Добавить">
+                  <i class="bi bi-plus-lg"></i>
+                </button>
+                <div id="issues-status" class="ms-auto text-secondary mono small"></div>
+              </div>
+            {% endif %}
+
+            {% if not is_editable %}
+            <div id="issues-view">
+              {% if issues %}
+              <div class="table-responsive">
+                <table class="table table-dark table-hover table-sm align-middle mb-0 mono small border border-secondary border-opacity-25 rounded overflow-hidden">
+                  <thead class="text-secondary border-secondary border-opacity-25">
+                    <tr>
+                      <th class="ps-3" style="width: 3.25rem;">№</th>
+                      <th>ОПИСАНИЕ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for issue in issues %}
+                    <tr>
+                      <td class="ps-3 text-info align-top">{{ loop.index }}</td>
+                      <td class="align-top">
+                        <div class="text-white" style="white-space: pre-wrap;">{{ issue }}</div>
+                        {% if issue_media_initial and loop.index0 < (issue_media_initial|length) %}
+                          {% set med = issue_media_initial[loop.index0] %}
+                          {% if med %}
+                          <div class="d-flex flex-wrap gap-2 mt-2 cabinet-issue-readonly-media">
+                            {% for m in med %}
+                              {% if m.mime is defined and (m.mime or '')[:6] == 'video/' %}
+                              <span class="issue-video-hover-wrap d-inline-block rounded border border-secondary border-opacity-25" data-video-hover-src="{{ m.url }}">
+                                <video src="{{ m.url }}" muted playsinline preload="metadata" class="rounded" style="max-height: 8rem; max-width: 100%; display: block;"></video>
+                              </span>
+                              {% else %}
+                              <a href="{{ m.url }}" target="_blank" rel="noopener" class="d-inline-block">
+                                <img src="{{ m.url }}" alt="" class="rounded border border-secondary border-opacity-25" style="max-height: 8rem; max-width: 100%; object-fit: contain;" loading="lazy">
+                              </a>
+                              {% endif %}
+                            {% endfor %}
+                          </div>
+                          {% endif %}
+                        {% endif %}
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              {% else %}
+                <div class="text-secondary mono">НЕТ ДАННЫХ</div>
+              {% endif %}
+            </div>
+            {% endif %}
+          </div>
+          {% if appointment.comment %}
+          <div class="border-top border-secondary border-opacity-25 pt-3">
+            <div class="text-secondary mono small mb-2">СЕРВИС</div>
+            <div class="text-white">{{ appointment.comment }}</div>
+          </div>
+          {% endif %}
+          {% if appointment.cancel_reason %}
+          <div class="border-top border-secondary border-opacity-25 pt-3 mt-3">
+            <div class="text-secondary mono small mb-2">ОТМЕНА</div>
+            <div class="text-warning">{{ appointment.cancel_reason }}</div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      {% set ns = namespace(total_price=0, total_duration=0) %}
+      {% for it in appointment.items %}
+        {% if not it.declined_by_client %}
+          {% set base_price = (it.price_snapshot or 0) %}
+          {% set base_dur = (it.duration_snapshot or it.work.duration_min or 0) %}
+          {% set qty = (it.qty or 1) %}
+          {% set _row_total_price = (base_price * (it.k2 or 1.0) * qty) | round(0, 'common') | int %}
+          {% set _row_total_duration = (base_dur * (it.k1 or 1.0) * qty) | round(0, 'common') | int %}
+          {% set ns.total_price = ns.total_price + _row_total_price %}
+          {% set ns.total_duration = ns.total_duration + _row_total_duration %}
+        {% endif %}
       {% endfor %}
+
+      <div class="card bg-dark neon-border-blue shadow-lg mb-4">
+        <div class="card-header bg-transparent border-secondary border-opacity-25 py-3">
+          <h5 class="card-title m-0 mono text-white">
+            {% set _h_total = (ns.total_duration // 60) %}
+            {% set _m_total = (ns.total_duration % 60) %}
+            <i class="bi bi-tools me-2"></i>РАБОТЫ ПО ЗАЯВКЕ <span class="ms-3 text-info">Σ <span id="cabinet-items-total-duration">{{ "%02d"|format(_h_total) }}:{{ "%02d"|format(_m_total) }}</span></span> <span class="ms-3 neon-text-blue">Σ <span id="cabinet-items-total-price">{{ "{:,.0f}".format(ns.total_price).replace(',', ' ') }}</span> ₽</span>
+          </h5>
+        </div>
+        <div class="card-body p-0">
+          <div id="cabinet-works-body">
+          {% if not appointment.items %}
+          <div class="p-4 text-secondary mono">РАБОТЫ ЕЩЕ НЕ ДОБАВЛЕНЫ.</div>
+          {% else %}
+          <div class="table-responsive">
+            <table class="table table-dark table-hover align-middle mb-0 mono small">
+              <thead class="text-secondary border-secondary border-opacity-25">
+                <tr>
+                  <th class="ps-4">НАИМЕНОВАНИЕ</th>
+                  <th>ДОПОЛНИТЕЛЬНО</th>
+                  <th>КОЛ-ВО</th>
+                  <th>ДЛИТЕЛЬНОСТЬ</th>
+                  <th class="pe-4 text-end">СТОИМОСТЬ</th>
+                  {% if is_editable %}
+                    <th class="pe-4 text-end"></th>
+                  {% endif %}
+                </tr>
+              </thead>
+              <tbody class="border-secondary border-opacity-10" id="cabinet-items-tbody">
+                {% for item in appointment.items %}
+                <tr data-item-id="{{ item.id }}" data-declined="{{ 1 if item.declined_by_client else 0 }}">
+                  <td class="ps-4 text-white {% if item.declined_by_client %}text-decoration-line-through text-secondary{% endif %}">{{ item.work.title }}</td>
+                  <td class="text-white {% if item.declined_by_client %}text-decoration-line-through text-secondary{% endif %}">{{ item.extra or "" }}</td>
+                  <td class="text-white {% if item.declined_by_client %}text-decoration-line-through text-secondary{% endif %}">{{ item.qty }}</td>
+                  {% set base_dur = (item.duration_snapshot or item.work.duration_min or 0) %}
+                  {% set base_price = (item.price_snapshot or 0) %}
+                  {% set qty = (item.qty or 1) %}
+                  {% set total_dur = (base_dur * (item.k1 or 1.0) * qty) | round(0, 'common') | int %}
+                  {% set total_price = (base_price * (item.k2 or 1.0) * qty) | round(0, 'common') | int %}
+                  {% set _h = (total_dur // 60) %}
+                  {% set _m = (total_dur % 60) %}
+                  <td class="text-info {% if item.declined_by_client %}text-decoration-line-through text-secondary{% endif %}">{{ "%02d"|format(_h) }}:{{ "%02d"|format(_m) }}</td>
+                  <td class="pe-4 text-end text-white {% if item.declined_by_client %}text-decoration-line-through text-secondary{% endif %}">{{ "{:,.0f}".format(total_price).replace(',', ' ') }} ₽</td>
+                  {% if is_editable %}
+                    <td class="pe-4 text-end">
+                      <button type="button" class="btn btn-sm btn-outline-warning border-0 cabinet-item-toggle" data-item-id="{{ item.id }}" data-declined="{{ 1 if item.declined_by_client else 0 }}">
+                        <i class="bi {% if item.declined_by_client %}bi-arrow-counterclockwise{% else %}bi-x-lg{% endif %}"></i>
+                      </button>
+                    </td>
+                  {% endif %}
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <script>
+        window.cabinetApptSync = {
+          problemHash: {{ problem_description_hash|tojson }},
+          issueMediaHash: {{ issue_media_hash|tojson }},
+        };
+      </script>
+
+      <script>
+        (function () {
+          const winInput = document.getElementById('cabinet-appt-win-input');
+          const winBtn = document.getElementById('cabinet-appt-win-save');
+          const winMsg = document.getElementById('cabinet-appt-win-msg');
+          if (winInput && winBtn) {
+            const winUrl = {{ url_for('cabinet.appointment_win_update_json', appointment_id=appointment.id)|tojson }};
+            const csrfToken = '{{ csrf_token() }}';
+            function setWinMsg(text, err) {
+              if (!winMsg) return;
+              winMsg.textContent = text || '';
+              winMsg.classList.toggle('text-danger', !!err);
+              winMsg.classList.toggle('text-success', !err && !!text && text !== 'Сохранение...');
+              winMsg.classList.toggle('text-secondary', !text);
+            }
+            function filterWinValue(el) {
+              const v = String(el.value || '')
+                .replace(/[^0-9A-Za-z]/g, '')
+                .toUpperCase()
+                .slice(0, 32);
+              if (v !== el.value) el.value = v;
+            }
+            winInput.addEventListener('input', function () {
+              filterWinValue(winInput);
+            });
+            filterWinValue(winInput);
+            winBtn.addEventListener('click', async function () {
+              filterWinValue(winInput);
+              try {
+                setWinMsg('Сохранение...', false);
+                const r = await fetch(winUrl, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                  credentials: 'same-origin',
+                  body: JSON.stringify({ win_number: winInput.value }),
+                });
+                const d = await r.json();
+                if (!r.ok || !d.ok) throw new Error(d.message || 'Ошибка');
+                winInput.value = d.win_number || '';
+                setWinMsg('Сохранено', false);
+                setTimeout(function () {
+                  setWinMsg('', false);
+                }, 1500);
+              } catch (e) {
+                setWinMsg(e.message || 'Ошибка', true);
+              }
+            });
+          }
+        })();
+      </script>
+
+      <script>
+        (function () {
+          const isEditable = {{ 'true' if is_editable else 'false' }};
+          if (!isEditable) return;
+
+          const csrfToken = '{{ csrf_token() }}';
+          const issuesUrl = '{{ url_for("cabinet.appointment_problems_update_json", appointment_id=appointment.id) }}';
+          const deleteItemUrlTemplate = '{{ url_for("cabinet.appointment_item_delete_json", appointment_id=appointment.id, item_id=0) }}';
+          const issueUploadUrl = '{{ url_for("cabinet.appointment_issue_media_upload", appointment_id=appointment.id) }}';
+          const issueDeleteUrlTpl = '{{ url_for("cabinet.appointment_issue_media_delete_json", appointment_id=appointment.id, media_id=0) }}';
+
+          const issuesEditor = document.getElementById('issues-editor');
+          const issuesAddBtn = document.getElementById('issues-add-btn');
+          const issuesStatus = document.getElementById('issues-status');
+
+          const worksBody = document.getElementById('cabinet-works-body');
+          const totalDurEl = document.getElementById('cabinet-items-total-duration');
+          const totalPriceEl = document.getElementById('cabinet-items-total-price');
+
+          function setIssuesStatus(text, isError) {
+            if (!issuesStatus) return;
+            issuesStatus.textContent = text || '';
+            issuesStatus.classList.toggle('text-danger', !!isError);
+            issuesStatus.classList.toggle('text-secondary', !isError);
+          }
+
+          function escapeHtml(s) {
+            return String(s || '')
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#39;');
+          }
+
+          function formatRub(n) {
+            const x = Number(n || 0) || 0;
+            return String(Math.round(x)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+          }
+
+          function formatHHMM(min) {
+            const total = Math.max(0, Math.round(Number(min || 0) || 0));
+            const h = Math.floor(total / 60);
+            const m = total % 60;
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+          }
+
+          function deleteMediaUrl(mid) {
+            return issueDeleteUrlTpl.replace(/\/0\/delete-json$/, '/' + mid + '/delete-json');
+          }
+
+          function isVideoMime(mime) {
+            return String(mime || '').toLowerCase().startsWith('video/');
+          }
+
+          let issuesState = {{ issues|tojson }};
+          if (!issuesState || !issuesState.length) issuesState = [''];
+          let editingMask = issuesState.map(() => false);
+          if (issuesState.length === 1 && !String(issuesState[0] || '').trim()) {
+            editingMask[0] = true;
+          }
+
+          let issuesMediaState = {{ issue_media_initial|tojson }};
+          if (!Array.isArray(issuesMediaState)) issuesMediaState = [];
+          function alignMediaToIssues() {
+            while (issuesMediaState.length < issuesState.length) issuesMediaState.push([]);
+            issuesMediaState.length = issuesState.length;
+          }
+          alignMediaToIssues();
+
+          function syncEditingToState() {
+            if (!issuesEditor) return;
+            issuesEditor.querySelectorAll('tr[data-issue-index]').forEach((tr) => {
+              const idx = Number(tr.dataset.issueIndex);
+              const ta = tr.querySelector('textarea.issue-input');
+              if (ta && Number.isFinite(idx)) issuesState[idx] = ta.value;
+            });
+          }
+
+          function payloadIssues() {
+            syncEditingToState();
+            return issuesState.map((s) => String(s || '').trim()).filter(Boolean);
+          }
+
+          function payloadMediaBySlotForCleaned() {
+            const out = [];
+            for (let i = 0; i < issuesState.length; i++) {
+              if (!String(issuesState[i] || '').trim()) continue;
+              out.push((issuesMediaState[i] || []).map((x) => x.id));
+            }
+            return out;
+          }
+
+          function mediaStripHtml(i) {
+            const row = issuesMediaState[i] || [];
+            let h = '<div class="d-flex flex-wrap gap-1 align-items-start mt-2 cabinet-issue-media-strip">';
+            row.forEach((m) => {
+              if (!m || !m.id) return;
+              const u = escapeHtml(m.url);
+              const vid = isVideoMime(m.mime);
+              const inner = vid
+                ? '<span class="issue-video-hover-wrap d-inline-block rounded border border-secondary border-opacity-25" data-video-hover-src="' +
+                  u +
+                  '"><video src="' +
+                  u +
+                  '" class="rounded" style="max-height:5rem;max-width:100%;display:block;" muted playsinline preload="metadata"></video></span>'
+                : '<img src="' + u + '" alt="" class="rounded border border-secondary border-opacity-25" style="max-height:5rem;max-width:100%;object-fit:contain;" loading="lazy">';
+              h +=
+                '<div class="position-relative">' +
+                inner +
+                '<button type="button" class="btn btn-sm btn-outline-danger position-absolute top-0 end-0 p-0 lh-1 issue-rm-media" data-issue-idx="' +
+                i +
+                '" data-media-id="' +
+                m.id +
+                '" title="Удалить файл">&times;</button></div>';
+            });
+            h +=
+              '<label class="btn btn-sm btn-outline-secondary mb-0 cabinet-issue-file-label" title="Фото или видео" style="cursor:pointer">';
+            h +=
+              '<input type="file" class="cabinet-issue-file-input" data-issue-idx="' +
+              i +
+              '" accept="image/*,video/*" tabindex="-1" style="position:absolute;width:0.01px;height:0.01px;opacity:0;overflow:hidden">';
+            h += '<i class="bi bi-camera-video"></i></label></div></div>';
+            return h;
+          }
+
+          function renderIssuesEditorFromState() {
+            if (!issuesEditor) return;
+            alignMediaToIssues();
+            let body = '';
+            issuesState.forEach((text, i) => {
+              const n = i + 1;
+              const editing = !!editingMask[i];
+              const esc = escapeHtml(text);
+              const canDelete = issuesState.length > 1;
+              body += '<tr data-issue-index="' + i + '">';
+              body += '<td class="ps-3 text-info align-top">' + n + '</td>';
+              body += '<td class="align-top">';
+              if (editing) {
+                body += '<textarea class="form-control form-control-sm bg-dark text-white border-secondary border-opacity-50 mono issue-input" rows="2" placeholder="Опишите неисправность...">' + esc + '</textarea>';
+              } else {
+                body += '<div class="text-white issue-view py-1" style="white-space:pre-wrap;">' + esc + '</div>';
+              }
+              body += mediaStripHtml(i);
+              body += '</td>';
+              body += '<td class="pe-3 text-end text-nowrap align-top">';
+              if (editing) {
+                body += '<button type="button" class="btn btn-sm btn-outline-success border-0 issue-save" data-index="' + i + '" title="Сохранить"><i class="bi bi-save"></i></button>';
+              } else {
+                body += '<button type="button" class="btn btn-sm btn-outline-info border-0 issue-edit" data-index="' + i + '" title="Править"><i class="bi bi-pencil"></i></button>';
+              }
+              if (canDelete) {
+                body += '<button type="button" class="btn btn-sm btn-outline-danger border-0 issue-remove" data-index="' + i + '" title="Удалить"><i class="bi bi-trash"></i></button>';
+              }
+              body += '</td></tr>';
+            });
+            issuesEditor.innerHTML =
+              '<div class="table-responsive">' +
+              '<table class="table table-dark table-hover table-sm align-middle mb-0 mono small border border-secondary border-opacity-25 rounded overflow-hidden">' +
+              '<thead class="text-secondary border-secondary border-opacity-25">' +
+              '<tr><th class="ps-3" style="width:3.25rem;">№</th><th>ОПИСАНИЕ</th><th class="pe-3 text-end" style="width:6.75rem;"></th></tr>' +
+              '</thead><tbody>' + body + '</tbody></table></div>';
+          }
+
+          async function deleteMediaOnServer(mediaId) {
+            const r = await fetch(deleteMediaUrl(mediaId), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+              body: '{}',
+            });
+            const d = await r.json();
+            if (!r.ok || !d.ok) throw new Error(d.message || 'Ошибка удаления файла');
+            return d;
+          }
+
+          async function saveIssuesToServer() {
+            try {
+              setIssuesStatus('СОХРАНЕНИЕ...', false);
+              const cleaned = payloadIssues();
+              const mediaAligned = payloadMediaBySlotForCleaned();
+              const response = await fetch(issuesUrl, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ issues: cleaned, media_by_slot: mediaAligned })
+              });
+              const data = await response.json();
+              if (!response.ok || !data.ok) throw new Error(data.message || 'Ошибка');
+              issuesState = (data.issues && data.issues.length) ? data.issues : [''];
+              editingMask = issuesState.map(() => false);
+              if (issuesState.length === 1 && !String(issuesState[0] || '').trim()) {
+                editingMask[0] = true;
+              }
+              if (data.issue_media && Array.isArray(data.issue_media)) {
+                issuesMediaState = data.issue_media.map((row) => (Array.isArray(row) ? row : []));
+              }
+              alignMediaToIssues();
+              if (data.problem_hash && window.cabinetApptSync) {
+                window.cabinetApptSync.problemHash = data.problem_hash;
+              }
+              if (data.issue_media_hash && window.cabinetApptSync) {
+                window.cabinetApptSync.issueMediaHash = data.issue_media_hash;
+              }
+              renderIssuesEditorFromState();
+              setIssuesStatus('OK', false);
+              setTimeout(() => setIssuesStatus('', false), 900);
+            } catch (err) {
+              setIssuesStatus(err.message || 'Ошибка', true);
+            }
+          }
+
+          renderIssuesEditorFromState();
+
+          window.addEventListener('cabinet-issues-remote-update', function (ev) {
+            const det = ev.detail;
+            if (!det || !Array.isArray(det.issues)) return;
+            const active = document.activeElement;
+            if (active && issuesEditor && issuesEditor.contains(active) && active.matches && active.matches('textarea.issue-input')) {
+              return;
+            }
+            issuesState = det.issues.length ? det.issues.map(String) : [''];
+            editingMask = issuesState.map(() => false);
+            if (issuesState.length === 1 && !String(issuesState[0] || '').trim()) {
+              editingMask[0] = true;
+            }
+            if (Array.isArray(det.issue_media)) {
+              issuesMediaState = det.issue_media.map((row) => (Array.isArray(row) ? row : []));
+            }
+            alignMediaToIssues();
+            if (det.problem_hash && window.cabinetApptSync) {
+              window.cabinetApptSync.problemHash = det.problem_hash;
+            }
+            if (det.issue_media_hash && window.cabinetApptSync) {
+              window.cabinetApptSync.issueMediaHash = det.issue_media_hash;
+            }
+            renderIssuesEditorFromState();
+          });
+
+          if (issuesEditor) {
+            issuesEditor.addEventListener('click', (e) => {
+              const rmM = e.target.closest('.issue-rm-media');
+              if (rmM) {
+                const mid = Number(rmM.dataset.mediaId || '0');
+                const ii = Number(rmM.dataset.issueIdx || '0');
+                if (!mid) return;
+                deleteMediaOnServer(mid)
+                  .then((d) => {
+                    const row = issuesMediaState[ii] || [];
+                    issuesMediaState[ii] = row.filter((x) => x.id !== mid);
+                    if (window.cabinetApptSync && d && d.issue_media_hash) {
+                      window.cabinetApptSync.issueMediaHash = d.issue_media_hash;
+                    }
+                    renderIssuesEditorFromState();
+                  })
+                  .catch((err) => setIssuesStatus(err.message || 'Ошибка', true));
+                return;
+              }
+              const del = e.target.closest('.issue-remove');
+              if (del) {
+                syncEditingToState();
+                const idx = Number(del.dataset.index || '0');
+                issuesState.splice(idx, 1);
+                editingMask.splice(idx, 1);
+                issuesMediaState.splice(idx, 1);
+                if (!issuesState.length) {
+                  issuesState = [''];
+                  editingMask = [true];
+                  issuesMediaState = [[]];
+                }
+                alignMediaToIssues();
+                renderIssuesEditorFromState();
+                return;
+              }
+              const editBtn = e.target.closest('.issue-edit');
+              if (editBtn) {
+                syncEditingToState();
+                const idx = Number(editBtn.dataset.index || '0');
+                editingMask = issuesState.map((_, j) => j === idx);
+                renderIssuesEditorFromState();
+                return;
+              }
+              const saveBtn = e.target.closest('.issue-save');
+              if (saveBtn) {
+                saveIssuesToServer();
+              }
+            });
+
+            issuesEditor.addEventListener('change', async (e) => {
+              const t = e.target;
+              if (!t || !t.matches || !t.matches('input.cabinet-issue-file-input')) return;
+              const inp = t;
+              if (!(inp instanceof HTMLInputElement) || !inp.files || !inp.files[0]) return;
+              const ii = Number(inp.getAttribute('data-issue-idx') || inp.dataset.issueIdx || '0');
+              const file = inp.files[0];
+              inp.value = '';
+              try {
+                setIssuesStatus('ЗАГРУЗКА...', false);
+                const fd = new FormData();
+                fd.append('csrf_token', csrfToken);
+                fd.append('issue_slot', String(ii));
+                fd.append('file', file);
+                const r = await fetch(issueUploadUrl, { method: 'POST', body: fd, headers: { 'X-CSRFToken': csrfToken }, credentials: 'same-origin' });
+                const d = await r.json();
+                if (!r.ok || !d.ok) throw new Error(d.message || 'Ошибка загрузки');
+                if (!issuesMediaState[ii]) issuesMediaState[ii] = [];
+                issuesMediaState[ii].push(d.media);
+                if (window.cabinetApptSync && d.issue_media_hash) {
+                  window.cabinetApptSync.issueMediaHash = d.issue_media_hash;
+                }
+                renderIssuesEditorFromState();
+                setIssuesStatus('', false);
+              } catch (err) {
+                setIssuesStatus(err.message || 'Ошибка', true);
+              }
+            });
+          }
+
+          if (issuesAddBtn) {
+            issuesAddBtn.addEventListener('click', () => {
+              syncEditingToState();
+              issuesState.push('');
+              issuesMediaState.push([]);
+              editingMask = issuesState.map((_, j) => j === issuesState.length - 1);
+              renderIssuesEditorFromState();
+            });
+          }
+
+          if (worksBody) {
+            worksBody.addEventListener('click', async (e) => {
+              const btn = e.target.closest('.cabinet-item-toggle');
+              if (!btn) return;
+              const itemId = Number(btn.dataset.itemId || '0');
+              if (!itemId) return;
+              try {
+                const url = deleteItemUrlTemplate.replace(/0$/, String(itemId));
+                const response = await fetch(url, {
+                  method: 'POST',
+                  headers: { 'X-CSRFToken': csrfToken }
+                });
+                const data = await response.json();
+                if (!response.ok || !data.ok) throw new Error(data.message || 'Ошибка');
+                const row = worksBody.querySelector(`tr[data-item-id="${itemId}"]`);
+                if (row) {
+                  const declined = !!data.declined_by_client;
+                  row.dataset.declined = declined ? '1' : '0';
+                  btn.dataset.declined = declined ? '1' : '0';
+                  const icon = btn.querySelector('i');
+                  if (icon) {
+                    icon.classList.toggle('bi-x-lg', !declined);
+                    icon.classList.toggle('bi-arrow-counterclockwise', declined);
+                  }
+                  row.querySelectorAll('td').forEach((td) => {
+                    if (td.querySelector('button')) return;
+                    td.classList.toggle('text-decoration-line-through', declined);
+                    td.classList.toggle('text-secondary', declined);
+                  });
+                }
+                if (totalDurEl) totalDurEl.textContent = formatHHMM(data.total_duration || 0);
+                if (totalPriceEl) totalPriceEl.textContent = formatRub(data.total_price || 0);
+              } catch (err) {
+              }
+            });
+          }
+        })();
+      </script>
+
+      <script>
+        (function () {
+          const snapshotUrl = {{ url_for('cabinet.appointment_snapshot_json', appointment_id=appointment.id)|tojson }};
+          let lastStatus = {{ appointment.status|tojson }};
+          let lastVisitKey = {{ visit_key|tojson }};
+          const pollMs = 8000;
+
+          function escapeHtml(s) {
+            return String(s || '')
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#39;');
+          }
+
+          function formatRub(n) {
+            const x = Number(n || 0) || 0;
+            return String(Math.round(x)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+          }
+
+          function updateStatusBadge(d) {
+            const el = document.getElementById('cabinet-appt-status-badge');
+            if (!el) return;
+            const cls = d.badge_class || 'secondary';
+            el.textContent = d.status_label || d.status;
+            el.className = 'badge border border-' + cls + ' text-' + cls + ' bg-' + cls + ' bg-opacity-10 border-opacity-25 fw-bold fs-5 px-3 py-2';
+          }
+
+          function renderIssuesReadOnly(issues, issueMedia) {
+            const mount = document.getElementById('issues-view');
+            if (!mount) return;
+            if (!issues || !issues.length) {
+              mount.innerHTML = '<div class="text-secondary mono">НЕТ ДАННЫХ</div>';
+              return;
+            }
+            const media = Array.isArray(issueMedia) ? issueMedia : [];
+            const rows = issues
+              .map(function (t, i) {
+                const rowM = media[i] || [];
+                let mediaHtml = '';
+                if (rowM.length) {
+                  mediaHtml =
+                    '<div class="d-flex flex-wrap gap-2 mt-2">' +
+                    rowM
+                      .map(function (m) {
+                        const u = escapeHtml(m.url);
+                        const vid = String(m.mime || '').toLowerCase().startsWith('video/');
+                        return vid
+                          ? '<span class="issue-video-hover-wrap d-inline-block rounded border border-secondary border-opacity-25" data-video-hover-src="' +
+                            u +
+                            '"><video src="' +
+                            u +
+                            '" muted playsinline preload="metadata" class="rounded" style="max-height:8rem;max-width:100%;display:block;"></video></span>'
+                          : '<a href="' + u + '" target="_blank" rel="noopener" class="d-inline-block"><img src="' + u + '" alt="" class="rounded border border-secondary border-opacity-25" style="max-height:8rem;max-width:100%;object-fit:contain;" loading="lazy"></a>';
+                      })
+                      .join('') +
+                    '</div>';
+                }
+                return (
+                  '<tr><td class="ps-3 text-info align-top">' +
+                  (i + 1) +
+                  '</td><td class="align-top"><div class="text-white" style="white-space:pre-wrap;">' +
+                  escapeHtml(t) +
+                  '</div>' +
+                  mediaHtml +
+                  '</td></tr>'
+                );
+              })
+              .join('');
+            mount.innerHTML =
+              '<div class="table-responsive">' +
+              '<table class="table table-dark table-hover table-sm align-middle mb-0 mono small border border-secondary border-opacity-25 rounded overflow-hidden">' +
+              '<thead class="text-secondary border-secondary border-opacity-25">' +
+              '<tr><th class="ps-3" style="width:3.25rem;">№</th><th>ОПИСАНИЕ</th></tr>' +
+              '</thead><tbody>' +
+              rows +
+              '</tbody></table></div>';
+          }
+
+          function renderWorksFromSnapshot(d) {
+            const body = document.getElementById('cabinet-works-body');
+            const durEl = document.getElementById('cabinet-items-total-duration');
+            const priceEl = document.getElementById('cabinet-items-total-price');
+            if (durEl) durEl.textContent = d.total_duration_label || '00:00';
+            if (priceEl) priceEl.textContent = d.total_price_display || '0';
+            if (!body) return;
+
+            const items = d.items || [];
+            if (!items.length) {
+              body.innerHTML = '<div class="p-4 text-secondary mono">РАБОТЫ ЕЩЕ НЕ ДОБАВЛЕНЫ.</div>';
+              return;
+            }
+
+            const showAct = !!d.is_editable;
+            const actionTh = showAct ? '<th class="pe-4 text-end"></th>' : '';
+            const rows = items.map(function (it) {
+              const dec = !!it.declined;
+              const line = dec ? 'text-decoration-line-through text-secondary' : '';
+              const actionTd = showAct
+                ? '<td class="pe-4 text-end"><button type="button" class="btn btn-sm btn-outline-warning border-0 cabinet-item-toggle" data-item-id="' +
+                  it.id +
+                  '" data-declined="' +
+                  (dec ? '1' : '0') +
+                  '"><i class="bi ' +
+                  (dec ? 'bi-arrow-counterclockwise' : 'bi-x-lg') +
+                  '"></i></button></td>'
+                : '';
+              return (
+                '<tr data-item-id="' +
+                it.id +
+                '" data-declined="' +
+                (dec ? '1' : '0') +
+                '">' +
+                '<td class="ps-4 text-white ' +
+                line +
+                '">' +
+                escapeHtml(it.title) +
+                '</td>' +
+                '<td class="text-white ' +
+                line +
+                '">' +
+                escapeHtml(it.extra) +
+                '</td>' +
+                '<td class="text-white ' +
+                line +
+                '">' +
+                escapeHtml(String(it.qty)) +
+                '</td>' +
+                '<td class="text-info ' +
+                line +
+                '">' +
+                escapeHtml(it.duration_label) +
+                '</td>' +
+                '<td class="pe-4 text-end text-white ' +
+                line +
+                '">' +
+                formatRub(it.price) +
+                ' ₽</td>' +
+                actionTd +
+                '</tr>'
+              );
+            }).join('');
+
+            body.innerHTML =
+              '<div class="table-responsive">' +
+              '<table class="table table-dark table-hover align-middle mb-0 mono small">' +
+              '<thead class="text-secondary border-secondary border-opacity-25">' +
+              '<tr>' +
+              '<th class="ps-4">НАИМЕНОВАНИЕ</th>' +
+              '<th>ДОПОЛНИТЕЛЬНО</th>' +
+              '<th>КОЛ-ВО</th>' +
+              '<th>ДЛИТЕЛЬНОСТЬ</th>' +
+              '<th class="pe-4 text-end">СТОИМОСТЬ</th>' +
+              actionTh +
+              '</tr></thead>' +
+              '<tbody class="border-secondary border-opacity-10">' +
+              rows +
+              '</tbody></table></div>';
+          }
+
+          async function syncSnapshot() {
+            try {
+              const response = await fetch(snapshotUrl, { credentials: 'same-origin', cache: 'no-store' });
+              const d = await response.json();
+              if (!response.ok || !d.ok) return;
+
+              if (d.status !== lastStatus) {
+                window.location.reload();
+                return;
+              }
+
+              if (window.cabinetApptSync) {
+                const ph = d.problem_hash;
+                const imh = d.issue_media_hash;
+                const probChanged = ph && ph !== window.cabinetApptSync.problemHash;
+                const mediaChanged = imh && imh !== window.cabinetApptSync.issueMediaHash;
+                if (probChanged || mediaChanged) {
+                  if (ph) window.cabinetApptSync.problemHash = ph;
+                  if (imh) window.cabinetApptSync.issueMediaHash = imh;
+                  if (d.is_editable) {
+                    window.dispatchEvent(
+                      new CustomEvent('cabinet-issues-remote-update', {
+                        detail: {
+                          issues: d.issues || [],
+                          problem_hash: ph,
+                          issue_media: d.issue_media || [],
+                          issue_media_hash: imh,
+                        },
+                      })
+                    );
+                  } else {
+                    renderIssuesReadOnly(d.issues || [], d.issue_media || []);
+                  }
+                }
+              }
+
+              updateStatusBadge(d);
+              renderWorksFromSnapshot(d);
+
+              const winInputPoll = document.getElementById('cabinet-appt-win-input');
+              if (winInputPoll && d.win_number !== undefined && document.activeElement !== winInputPoll) {
+                winInputPoll.value = d.win_number || '';
+              }
+
+              if (d.visit_key !== undefined && d.visit_key !== lastVisitKey) {
+                lastVisitKey = d.visit_key;
+                const tel = document.getElementById('cabinet-appt-visit-time');
+                if (tel) {
+                  if (Array.isArray(d.visit_lines)) {
+                    tel.innerHTML = '';
+                    if (d.visit_lines.length) {
+                      d.visit_lines.forEach(function (line) {
+                        const row = document.createElement('div');
+                        row.className = 'cabinet-visit-time-line';
+                        row.textContent = line;
+                        tel.appendChild(row);
+                      });
+                    } else {
+                      const row = document.createElement('div');
+                      row.className = 'cabinet-visit-time-line';
+                      row.textContent = '—';
+                      tel.appendChild(row);
+                    }
+                  } else if (d.visit_label) {
+                    tel.textContent = d.visit_label;
+                  }
+                }
+              }
+            } catch (e) {}
+          }
+
+          let intervalId = setInterval(syncSnapshot, pollMs);
+          document.addEventListener('visibilitychange', function () {
+            if (document.hidden) {
+              clearInterval(intervalId);
+              intervalId = null;
+            } else {
+              syncSnapshot();
+              if (!intervalId) intervalId = setInterval(syncSnapshot, pollMs);
+            }
+          });
+          syncSnapshot();
+        })();
+      </script>
+
+      {% if appointment.work_order %}
+      <div class="card bg-dark neon-border-blue shadow-lg mb-4">
+        <div class="card-header bg-transparent border-secondary border-opacity-25 py-3">
+          <h5 class="card-title m-0 mono text-white">
+            <i class="bi bi-receipt me-2"></i>ЗАКАЗ-НАРЯД №{{ appointment.work_order.id }}
+          </h5>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <div class="text-secondary mono small mb-2">СТАТУС</div>
+              <div class="text-white">{{ appointment.work_order.status }}</div>
+            </div>
+            <div class="col-md-4">
+              <div class="text-secondary mono small mb-2">ОПЛАТА</div>
+              <div class="text-white">{{ "Оплачен" if appointment.work_order.is_paid else "Не оплачен" }}</div>
+            </div>
+            <div class="col-md-4">
+              <div class="text-secondary mono small mb-2">СУММА</div>
+              <div class="text-white fw-bold">{{ "{:,.0f}".format(appointment.work_order.total_amount or 0).replace(',', ' ') }} ₽</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if appointment.work_order and appointment.work_order.documents %}
+      <div class="card bg-dark neon-border-blue shadow-lg">
+        <div class="card-header bg-transparent border-secondary border-opacity-25 py-3">
+          <h5 class="card-title m-0 mono text-white">
+            <i class="bi bi-images me-2"></i>ФОТООТЧЕТ И ДОКУМЕНТЫ
+          </h5>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            {% for doc in appointment.work_order.documents %}
+            <div class="col-12 col-sm-6 col-xl-4">
+              <div class="card bg-dark border-secondary border-opacity-25 h-100">
+                {% if doc.mime.startswith('image/') %}
+                <a href="#" data-bs-toggle="modal" data-bs-target="#imageViewerModal" data-bs-image="{{ url_for('cabinet.download_document', doc_id=doc.id) }}" data-bs-title="{{ doc.filename }}">
+                  <img src="{{ url_for('cabinet.download_document', doc_id=doc.id) }}" class="card-img-top" alt="{{ doc.filename }}" style="aspect-ratio: 4/3; object-fit: cover;">
+                </a>
+                {% else %}
+                <div class="card-body text-center py-5">
+                  <i class="bi bi-file-earmark-text fs-1 text-info"></i>
+                </div>
+                {% endif %}
+                <div class="card-body border-top border-secondary border-opacity-25">
+                  <div class="text-white small text-truncate mb-3">{{ doc.filename }}</div>
+                  <a href="{{ url_for('cabinet.download_document', doc_id=doc.id) }}" class="btn btn-sm btn-outline-info w-100 mono">
+                    СКАЧАТЬ
+                  </a>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
     </div>
-  {% endif %}
+  </div>
+</div>
 
-  <a href="{{ url_for('cabinet.index') }}">Назад</a>
-
-  <!-- Image Viewer Modal -->
-  <div class="modal fade" id="imageViewerModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-xl modal-dialog-centered">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title" id="imageViewerTitle">Просмотр изображения</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body p-0 text-center bg-light">
-          <img src="" id="imageViewerContent" class="img-fluid" alt="Полный размер">
-        </div>
+<div class="modal fade" id="imageViewerModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content bg-dark neon-border-blue">
+      <div class="modal-header border-secondary border-opacity-25">
+        <h5 class="modal-title mono text-white" id="imageViewerTitle">Просмотр изображения</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-0 text-center">
+        <img src="" id="imageViewerContent" class="img-fluid" alt="Полный размер">
       </div>
     </div>
   </div>
+</div>
+{% endblock %}
 
-  <script>
-  document.addEventListener('DOMContentLoaded', function() {
-    const imageViewerModal = document.getElementById('imageViewerModal');
-    if (imageViewerModal) {
-      imageViewerModal.addEventListener('show.bs.modal', function(event) {
-        const button = event.relatedTarget;
-        const imageUrl = button.getAttribute('data-bs-image');
-        const filename = button.getAttribute('data-bs-title');
-        
-        const modalImage = imageViewerModal.querySelector('#imageViewerContent');
-        const modalTitle = imageViewerModal.querySelector('#imageViewerTitle');
-        
-        modalImage.src = imageUrl;
-        modalTitle.textContent = filename;
-      });
-    }
-  });
-  </script>
+{% block scripts %}
+{{ super() }}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const imageViewerModal = document.getElementById('imageViewerModal');
+  if (imageViewerModal) {
+    imageViewerModal.addEventListener('show.bs.modal', function(event) {
+      const button = event.relatedTarget;
+      const imageUrl = button.getAttribute('data-bs-image');
+      const filename = button.getAttribute('data-bs-title');
+      imageViewerModal.querySelector('#imageViewerContent').src = imageUrl;
+      imageViewerModal.querySelector('#imageViewerTitle').textContent = filename;
+    });
+  }
+});
+</script>
 {% endblock %}

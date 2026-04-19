@@ -5,7 +5,7 @@
     <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
         <div>
             <span class="badge neon-border-blue text-white mono mb-2">SYSTEM_CONFIG.EXE</span>
-            <h1 class="h2 m-0 neon-text-blue mono">[ НАСТРОЙКИ СИСТЕМЫ ]</h1>
+            <h1 class="h2 m-0 neon-text-blue mono">НАСТРОЙКИ СИСТЕМЫ</h1>
         </div>
     </div>
 
@@ -39,9 +39,15 @@
                                 {{ settings_form.email(class="form-control bg-dark text-white border-secondary border-opacity-50 mono") }}
                             </div>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label mono text-secondary smaller">{{ settings_form.work_hours.label | upper }}</label>
-                            {{ settings_form.work_hours(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Пн-Пт: 10-19...") }}
+                        <div class="row mb-3">
+                            <div class="col-md-8">
+                                <label class="form-label mono text-secondary smaller">{{ settings_form.work_hours.label | upper }}</label>
+                                {{ settings_form.work_hours(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Пн-Пт: 10-19...") }}
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label mono text-secondary smaller">{{ settings_form.slot_minutes.label | upper }}</label>
+                                {{ settings_form.slot_minutes(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", min="15", step="15") }}
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label mono text-secondary smaller">{{ settings_form.description.label | upper }} (ДЛЯ САЙТА)</label>

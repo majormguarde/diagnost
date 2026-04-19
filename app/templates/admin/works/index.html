@@ -2,10 +2,10 @@
 {% block content %}
   <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
     <div>
-      <span class="badge neon-border-blue text-white mono mb-2">SPECIALIZATIONS_LIST.CFG</span>
-      <h1 class="h2 m-0 neon-text-blue mono">СПЕЦИАЛИЗАЦИЯ</h1>
+      <span class="badge neon-border-blue text-white mono mb-2">OPERATIONS_LIST.CFG</span>
+      <h1 class="h2 m-0 neon-text-blue mono">ОПЕРАЦИИ И РАБОТЫ</h1>
     </div>
-    <a href="{{ url_for('admin.work_edit') }}" class="btn btn-outline-info mono">+ ДОБАВИТЬ_СПЕЦИАЛИЗАЦИЮ.EXE</a>
+    <a href="{{ url_for('admin.work_edit') }}" class="btn btn-outline-info mono">+ ДОБАВИТЬ_ОПЕРАЦИЮ.EXE</a>
   </div>
 
   <div class="card bg-dark neon-border-blue shadow-lg">
@@ -15,8 +15,9 @@
           <thead class="text-secondary border-secondary border-opacity-25">
             <tr>
               <th class="ps-4">ID</th>
-              <th>НАЗВАНИЕ</th>
-              <th>КАТЕГОРИЯ</th>
+              <th>ОПЕРАЦИЯ</th>
+              <th>УЧАСТОК</th>
+              <th>КАТЕГОРИЯ ОПЕРАЦИИ</th>
               <th>ДЛИТЕЛЬНОСТЬ</th>
               <th>БАЗОВАЯ_ЦЕНА</th>
               <th>АКТИВНА</th>
@@ -28,6 +29,7 @@
               <tr>
                 <td class="ps-4">> {{ work.id }}</td>
                 <td class="text-white">{{ work.title }}</td>
+                <td class="text-secondary">{{ work.category.competency.title if work.category and work.category.competency else "---" }}</td>
                 <td class="text-secondary">{{ work.category.title if work.category else "---" }}</td>
                 <td>{{ work.duration_min }} МИН</td>
                 <td class="neon-text-blue fw-bold">{{ work.base_price or "---" }} РУБ.</td>
@@ -45,9 +47,9 @@
             {% endfor %}
             {% if not works %}
               <tr>
-                <td colspan="7" class="text-center py-5 text-secondary">
+                <td colspan="8" class="text-center py-5 text-secondary">
                   <i class="bi bi-tools fs-1 d-block mb-3 opacity-25"></i>
-                  БАЗА_СПЕЦИАЛИЗАЦИЙ_ПУСТА.NULL
+                  БАЗА_ОПЕРАЦИЙ_ПУСТА.NULL
                 </td>
               </tr>
             {% endif %}

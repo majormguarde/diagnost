@@ -4,7 +4,7 @@
   <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
     <div>
       <span class="badge neon-border-blue text-white mono mb-2">MASTER_CONFIGURATION.EXE</span>
-      <h1 class="h2 m-0 neon-text-blue mono">[ {{ "РЕДАКТИРОВАТЬ" if master.id else "ДОБАВИТЬ" }} МАСТЕРА ]</h1>
+      <h1 class="h2 m-0 neon-text-blue mono">{{ "РЕДАКТИРОВАТЬ" if master.id else "ДОБАВИТЬ" }} МАСТЕРА</h1>
     </div>
     <a href="{{ url_for('admin.masters') }}" class="btn btn-outline-info mono">/назад_к_списку</a>
   </div>
@@ -43,7 +43,7 @@
             </div>
           </div>
           <div class="col-12 mb-4">
-            <label class="form-label text-secondary small">> СПЕЦИАЛИЗАЦИЯ</label>
+            <label class="form-label text-secondary small">> УЧАСТКИ</label>
             <div class="border border-secondary border-opacity-25 rounded p-3">
               <div class="row g-2">
                 {% for value, label in form.competency_ids.choices %}
@@ -62,11 +62,11 @@
                   </div>
                 {% endfor %}
                 {% if not form.competency_ids.choices %}
-                  <div class="col-12 text-secondary smaller">СПИСОК_СПЕЦИАЛИЗАЦИЙ_ПУСТ.NULL</div>
+                  <div class="col-12 text-secondary smaller">СПИСОК_УЧАСТКОВ_ПУСТ.NULL</div>
                 {% endif %}
               </div>
             </div>
-            <div class="form-text text-secondary smaller mt-2">! ОТМЕТЬТЕ ЧЕКБОКСАМИ НУЖНЫЕ НАПРАВЛЕНИЯ.</div>
+            <div class="form-text text-secondary smaller mt-2">! ОТМЕТЬТЕ УЧАСТКИ, НА КОТОРЫХ РАБОТАЕТ МАСТЕР.</div>
           </div>
         </div>
 

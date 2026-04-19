@@ -1,0 +1,96 @@
+{% extends "admin/admin_base.html" %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+    <div>
+      <span class="badge neon-border-blue text-white mono mb-2">CONTACT_LINK.CFG</span>
+      <h1 class="h2 m-0 neon-text-blue mono">СВЯЗЬ</h1>
+    </div>
+    <a href="{{ url_for('admin.settings') }}" class="btn btn-outline-secondary mono small">/к_общим_настройкам</a>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-8">
+      <div class="card bg-dark neon-border-blue shadow-lg">
+        <div class="card-header border-secondary border-opacity-25 bg-transparent py-3">
+          <h5 class="card-title m-0 mono text-white small">
+            <i class="bi bi-chat-dots me-2"></i>МЕССЕНДЖЕРЫ И ПОЧТА
+          </h5>
+        </div>
+        <div class="card-body">
+          <form method="POST">
+            {{ form.hidden_tag() }}
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <label class="form-label mono text-secondary smaller">{{ form.org_whatsapp.label.text | upper }}</label>
+                {{ form.org_whatsapp(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="+7 или 8 …") }}
+                <div class="form-text text-secondary smaller mono">Публичный номер для ссылки wa.me (сайт, подпись).</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label mono text-secondary smaller">{{ form.org_telegram.label.text | upper }}</label>
+                {{ form.org_telegram(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="username") }}
+              </div>
+            </div>
+            <div class="mb-4">
+              <label class="form-label mono text-secondary smaller">{{ form.email.label.text | upper }}</label>
+              {{ form.email(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="info@…") }}
+            </div>
+
+            <h6 class="mono text-info border-bottom border-secondary border-opacity-25 pb-2 mb-3 mt-4">SMTP (исходящая почта)</h6>
+            <div class="row mb-3">
+              <div class="col-md-8">
+                <label class="form-label mono text-secondary smaller">{{ form.smtp_host.label.text | upper }}</label>
+                {{ form.smtp_host(class="form-control bg-dark text-white border-secondary border-opacity-50 mono") }}
+              </div>
+              <div class="col-md-4">
+                <label class="form-label mono text-secondary smaller">{{ form.smtp_port.label.text | upper }}</label>
+                {{ form.smtp_port(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="587") }}
+              </div>
+            </div>
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <label class="form-label mono text-secondary smaller">{{ form.smtp_user.label.text | upper }}</label>
+                {{ form.smtp_user(class="form-control bg-dark text-white border-secondary border-opacity-50 mono") }}
+              </div>
+              <div class="col-md-6">
+                <label class="form-label mono text-secondary smaller">{{ form.smtp_password.label.text | upper }}</label>
+                {{ form.smtp_password(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Оставьте пустым, чтобы не менять") }}
+              </div>
+            </div>
+            <div class="row mb-4">
+              <div class="col-md-6 mb-3">
+                <label class="form-label mono text-secondary smaller">{{ form.smtp_from.label.text | upper }}</label>
+                {{ form.smtp_from(class="form-control bg-dark text-white border-secondary border-opacity-50 mono") }}
+              </div>
+              <div class="col-md-6 mb-3 d-flex align-items-end">
+                <div class="form-check">
+                  {{ form.smtp_use_tls(class="form-check-input bg-dark border-secondary") }}
+                  {{ form.smtp_use_tls.label(class="form-check-label text-white small") }}
+                </div>
+              </div>
+            </div>
+
+            <button type="submit" class="btn btn-info mono fw-bold">
+              <i class="bi bi-save me-2"></i>{{ form.submit.label.text }}
+            </button>
+          </form>
+          <form method="post" action="{{ url_for('admin.contact_test_email') }}" class="mt-3 pt-3 border-top border-secondary border-opacity-25" onsubmit="return confirm('Отправить тестовое письмо на адрес из поля «Email для связи»?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline-secondary mono">
+              <i class="bi bi-send me-2"></i>ТЕСТ SMTP (на email для связи)
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="card bg-dark border border-secondary border-opacity-25">
+        <div class="card-body mono small text-secondary">
+          <p class="mb-2">Поля <strong class="text-white">WhatsApp</strong> и <strong class="text-white">Telegram</strong> здесь — контакты <em>организации</em> (сайт, документы). Контакты клиентов задаются при регистрации и в справочнике «Клиенты».</p>
+          <p class="mb-0">Письма с сервера (заявки, тест) идут через SMTP ниже. Пароль хранится в базе — для почтовых сервисов используйте пароль приложения.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

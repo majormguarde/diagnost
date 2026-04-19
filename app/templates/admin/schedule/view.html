@@ -3,7 +3,7 @@
   <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
     <div>
       <span class="badge neon-border-blue text-white mono mb-2">SCHEDULE_MANAGER.EXE</span>
-      <h1 class="h2 m-0 neon-text-blue mono">[ РАСПИСАНИЕ: {{ master.name | upper }} ]</h1>
+      <h1 class="h2 m-0 neon-text-blue mono">РАСПИСАНИЕ: {{ master.name | upper }}</h1>
     </div>
     <a href="{{ url_for('admin.masters') }}" class="btn btn-outline-info mono">/назад_к_списку</a>
   </div>
@@ -20,75 +20,60 @@
             
             <div class="mb-4">
               <label class="form-label mono text-secondary small">> ДНИ_НЕДЕЛИ</label>
+              {% set company_work_days = org_settings.work_days.split(',') if org_settings.work_days else ['0','1','2','3','4','5','6'] %}
+              {% set weekday_labels = {'0': 'ПН', '1': 'ВТ', '2': 'СР', '3': 'ЧТ', '4': 'ПТ', '5': 'СБ', '6': 'ВС'} %}
               <div class="row g-2">
-                <div class="col-6">
+                {% for value in ['0', '1', '2', '3', '4', '5', '6'] %}
+                <div class="col-6 col-md-3">
                   <div class="form-check form-check-inline">
-                    <input class="form-check-input" type="checkbox" name="weekdays" value="0" id="weekday-0" checked>
-                    <label class="form-check-label mono text-white small" for="weekday-0">ПН</label>
-                  </div>
-                  <div class="form-check form-check-inline">
-                    <input class="form-check-input" type="checkbox" name="weekdays" value="1" id="weekday-1" checked>
-                    <label class="form-check-label mono text-white small" for="weekday-1">ВТ</label>
-                  </div>
-                  <div class="form-check form-check-inline">
-                    <input class="form-check-input" type="checkbox" name="weekdays" value="2" id="weekday-2" checked>
-                    <label class="form-check-label mono text-white small" for="weekday-2">СР</label>
-                  </div>
-                  <div class="form-check form-check-inline">
-                    <input class="form-check-input" type="checkbox" name="weekdays" value="3" id="weekday-3" checked>
-                    <label class="form-check-label mono text-white small" for="weekday-3">ЧТ</label>
+                    <input class="form-check-input" type="checkbox" name="weekdays" value="{{ value }}" id="weekday-{{ value }}" {% if value in company_work_days %}checked{% else %}disabled{% endif %}>
+                    <label class="form-check-label mono small {% if value in company_work_days %}text-white{% else %}text-secondary opacity-50{% endif %}" for="weekday-{{ value }}">{{ weekday_labels[value] }}</label>
                   </div>
                 </div>
-                <div class="col-6">
-                  <div class="form-check form-check-inline">
-                    <input class="form-check-input" type="checkbox" name="weekdays" value="4" id="weekday-4" checked>
-                    <label class="form-check-label mono text-white small" for="weekday-4">ПТ</label>
-                  </div>
-                  <div class="form-check form-check-inline">
-                    <input class="form-check-input" type="checkbox" name="weekdays" value="5" id="weekday-5">
-                    <label class="form-check-label mono text-white small" for="weekday-5">СБ</label>
-                  </div>
-                  <div class="form-check form-check-inline">
-                    <input class="form-check-input" type="checkbox" name="weekdays" value="6" id="weekday-6">
-                    <label class="form-check-label mono text-white small" for="weekday-6">ВС</label>
-                  </div>
-                </div>
+                {% endfor %}
+              </div>
+              <div class="mt-2 mono smaller text-secondary">
+                <i class="bi bi-info-circle me-1"></i> СЛОТЫ МОЖНО СОЗДАВАТЬ ТОЛЬКО В РАБОЧИЕ ДНИ, УКАЗАННЫЕ В НАСТРОЙКАХ СИСТЕМЫ.
               </div>
             </div>
 
             <div class="mb-4">
-              <label class="form-label mono text-secondary small">> ВРЕМЯ_РАБОТЫ</label>
-              <div class="row g-3">
-                <div class="col-6">
-                  <div class="form-check mb-2">
-                    <input class="form-check-input" type="checkbox" name="time_slots" value="09:00-12:00" id="time-1" checked>
-                    <label class="form-check-label mono text-white small" for="time-1">09:00-12:00</label>
-                  </div>
-                  <div class="form-check mb-2">
-                    <input class="form-check-input" type="checkbox" name="time_slots" value="12:00-15:00" id="time-2" checked>
-                    <label class="form-check-label mono text-white small" for="time-2">12:00-15:00</label>
-                  </div>
-                </div>
-                <div class="col-6">
-                  <div class="form-check mb-2">
-                    <input class="form-check-input" type="checkbox" name="time_slots" value="15:00-18:00" id="time-3" checked>
-                    <label class="form-check-label mono text-white small" for="time-3">15:00-18:00</label>
-                  </div>
-                  <div class="form-check mb-2">
-                    <input class="form-check-input" type="checkbox" name="time_slots" value="18:00-21:00" id="time-4">
-                    <label class="form-check-label mono text-white small" for="time-4">18:00-21:00</label>
-                  </div>
-                </div>
+              <label class="form-label mono text-secondary small">> ЧАСЫ_РАБОТЫ_ОРГАНИЗАЦИИ</label>
+              <input
+                type="text"
+                class="form-control bg-dark text-white border-secondary border-opacity-50 mono"
+                value="{{ org_settings.work_hours or 'Не указаны в настройках системы' }}"
+                readonly
+              >
+              <div class="mt-2 mono smaller text-secondary">
+                <i class="bi bi-info-circle me-1"></i> СЛОТЫ ГЕНЕРИРУЮТСЯ ТОЛЬКО В РАМКАХ ЧАСОВ РАБОТЫ ИЗ СИСТЕМНЫХ НАСТРОЕК.
               </div>
             </div>
 
             <div class="alert bg-dark border-secondary border-opacity-25 text-secondary mono smaller mb-4">
-              <i class="bi bi-info-circle me-2"></i>Слоты будут созданы для выбранных дней и времени. Существующие слоты не перезаписываются.
+              <i class="bi bi-info-circle me-2"></i>Слоты будут созданы для выбранных дней в рамках рабочего времени организации. Существующие слоты не перезаписываются.
             </div>
             
             <div class="d-flex gap-2 mb-3">
               <button type="submit" class="btn btn-info flex-fill mono fw-bold">ГЕНЕРИРОВАТЬ.SH</button>
               <button type="button" class="btn btn-outline-warning mono fw-bold" onclick="toggleAllWeekdays()">ИНВЕРТИРОВАТЬ</button>
+            </div>
+            <div class="row g-2 mb-3">
+              <div class="col-6">
+                <input type="date" name="date_from" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" value="{{ today_str }}">
+              </div>
+              <div class="col-6">
+                <input type="date" name="date_to" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" value="{{ end_date_str }}">
+              </div>
+            </div>
+            <div class="mb-3">
+              <button
+                type="submit"
+                class="btn btn-outline-danger w-100 mono fw-bold"
+                formaction="{{ url_for('admin.schedule_delete_all', master_id=master.id) }}"
+                formmethod="post"
+                onclick="return confirm('Удалить все слоты мастера в выбранном диапазоне дат?')"
+              >ПОЛНОЕ_УДАЛЕНИЕ_СЛОТОВ_ПО_ДАТЕ</button>
             </div>
             
             <div class="d-flex gap-2">
@@ -116,10 +101,10 @@
               <div class="d-flex justify-content-between align-items-center">
                 <span class="text-secondary mono small">ВЫБРАНО: <span id="selected-count">0</span> СЛОТОВ</span>
                 <div class="btn-group" role="group">
-                  <button type="button" class="btn btn-outline-danger btn-sm mono" onclick="deleteSelectedSlots()" disabled id="delete-btn">
+                  <button type="button" class="btn btn-outline-danger btn-sm mono" onclick="submitSelectedSlots('{{ url_for('admin.schedule_delete_selected', master_id=master.id) }}', 'Удалить выбранные слоты?')" disabled id="delete-btn">
                     <i class="bi bi-trash me-1"></i>УДАЛИТЬ
                   </button>
-                  <button type="button" class="btn btn-outline-warning btn-sm mono" onclick="blockSelectedSlots()" disabled id="block-btn">
+                  <button type="button" class="btn btn-outline-warning btn-sm mono" onclick="submitSelectedSlots('{{ url_for('admin.schedule_block_selected', master_id=master.id) }}', 'Заблокировать выбранные слоты?')" disabled id="block-btn">
                     <i class="bi bi-lock me-1"></i>ЗАБЛОКИРОВАТЬ
                   </button>
                 </div>
@@ -154,16 +139,18 @@
                     <tr>
                       <td class="ps-4">
                         <div class="form-check">
-                          <input class="form-check-input slot-checkbox" type="checkbox" value="{{ slot.id }}" id="slot-{{ slot.id }}" {% if slot.status != 'free' %}disabled{% endif %}>
+                          <input class="form-check-input slot-checkbox" type="checkbox" value="{{ slot.id }}" id="slot-{{ slot.id }}" {% if slot.id in booked_slot_ids %}disabled{% endif %}>
                           <label class="form-check-label" for="slot-{{ slot.id }}"></label>
                         </div>
                       </td>
                       <td class="text-white">{{ slot.start_at.strftime('%H:%M') }} — {{ slot.end_at.strftime('%H:%M') }}</td>
                       <td class="text-end pe-4">
-                        {% if slot.status == 'free' %}
-                          <span class="badge border border-success text-success bg-success bg-opacity-10 border-opacity-25">СВОБОДЕН</span>
-                        {% else %}
+                        {% if slot.id in booked_slot_ids %}
                           <span class="badge border border-secondary text-secondary bg-secondary bg-opacity-10 border-opacity-25">ЗАНЯТ</span>
+                        {% elif slot.status == 'blocked' %}
+                          <span class="badge border border-warning text-warning bg-warning bg-opacity-10 border-opacity-25">ЗАБЛОКИРОВАН</span>
+                        {% else %}
+                          <span class="badge border border-success text-success bg-success bg-opacity-10 border-opacity-25">СВОБОДЕН</span>
                         {% endif %}
                       </td>
                     </tr>
@@ -178,21 +165,26 @@
     </div>
   </div>
 
+  <form id="selected-slots-form" method="POST" style="display:none;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  </form>
+
   <script>
     // Управление чекбоксами дней недели
     function toggleAllWeekdays() {
-      const checkboxes = document.querySelectorAll('input[name="weekdays"]');
+      const checkboxes = document.querySelectorAll('input[name="weekdays"]:not(:disabled)');
       checkboxes.forEach(cb => cb.checked = !cb.checked);
     }
 
     function selectWeekdays(weekdays) {
       const checkboxes = document.querySelectorAll('input[name="weekdays"]');
       checkboxes.forEach((cb, index) => {
+        if (cb.disabled) {
+          return;
+        }
         if (weekdays) {
-          // Будни: ПН-ПТ (0-4)
           cb.checked = index < 5;
         } else {
-          // Выходные: СБ-ВС (5-6)
           cb.checked = index >= 5;
         }
       });
@@ -240,29 +232,22 @@
       updateSelectedCount();
     });
 
-    // Функции для действий с выбранными слотами
-    function deleteSelectedSlots() {
-      const selectedSlots = document.querySelectorAll('.slot-checkbox:checked');
-      if (selectedSlots.length === 0) return;
-      
-      if (confirm(`Удалить ${selectedSlots.length} слотов?`)) {
-        const slotIds = Array.from(selectedSlots).map(cb => cb.value);
-        // Здесь будет AJAX запрос для удаления слотов
-        console.log('Удаление слотов:', slotIds);
-        alert('Функция удаления будет реализована на сервере');
+    function submitSelectedSlots(action, message) {
+      const selectedSlots = Array.from(document.querySelectorAll('.slot-checkbox:checked')).map(cb => cb.value);
+      if (selectedSlots.length === 0 || !confirm(message)) {
+        return;
       }
-    }
-
-    function blockSelectedSlots() {
-      const selectedSlots = document.querySelectorAll('.slot-checkbox:checked');
-      if (selectedSlots.length === 0) return;
-      
-      if (confirm(`Заблокировать ${selectedSlots.length} слотов?`)) {
-        const slotIds = Array.from(selectedSlots).map(cb => cb.value);
-        // Здесь будет AJAX запрос для блокировки слотов
-        console.log('Блокировка слотов:', slotIds);
-        alert('Функция блокировки будет реализована на сервере');
-      }
+      const form = document.getElementById('selected-slots-form');
+      form.action = action;
+      form.querySelectorAll('input[name="slot_ids"]').forEach(input => input.remove());
+      selectedSlots.forEach(slotId => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'slot_ids';
+        input.value = slotId;
+        form.appendChild(input);
+      });
+      form.submit();
     }
   </script>
 {% endblock %}

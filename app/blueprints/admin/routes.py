@@ -1,27 +1,95 @@
+from collections import defaultdict
+from itertools import groupby
 from functools import wraps
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 import os
+import re
+import smtplib
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for, current_app, send_from_directory
+from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for, current_app, send_from_directory
 from flask_login import current_user, login_required
+from sqlalchemy import delete, exists, or_, and_
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
 from werkzeug.utils import secure_filename
 
 from ...extensions import db
+from ...mail import MailConfigurationError, send_organization_email
 from ...models import (
-    Master, Work, WorkCategory, TimeSlot, Appointment, WorkOrder, 
-    WorkOrderDocument, AppointmentSlot, OrganizationSettings, User, 
-    Banner, Review, WorkOrderItem, WorkOrderPart, AppointmentItem,
-    Competency, CashFlow
+    Master, Work, WorkCategory, TimeSlot, Appointment, WorkOrder,
+    WorkOrderDocument, AppointmentSlot, OrganizationSettings, User,
+    Banner, Review, WorkOrderItem, WorkOrderPart, WorkOrderDetail, WorkOrderMaterial,
+    WorkOrderComplaintItem, WorkOrderAdditionalWork, AppointmentItem, Competency, CashFlow, MasterCompetency, AppointmentIssueMedia,
+    TelegramLinkToken,
 )
-from ...utils import normalize_phone
+from ...utils import (
+    client_telegram_url,
+    client_whatsapp_url,
+    delete_appointment_issue_media_file,
+    issue_media_fingerprint,
+    normalize_phone,
+    normalize_telegram_username,
+    normalize_win_number,
+    normalize_work_title,
+    problem_description_hash,
+    recalculate_work_order_total,
+    merged_work_order_inventory_rows,
+    work_title_key,
+)
 from .forms import (
-    MasterForm, WorkForm, CategoryForm, AppointmentForm, WorkOrderForm, 
-    DocumentUploadForm, OrganizationSettingsForm, AdminCredentialsForm, 
-    BannerForm, ReviewForm, WorkOrderItemForm, WorkOrderPartForm,
-    AppointmentItemForm, CompetencyForm
+    MasterForm, WorkForm, CategoryForm, AppointmentForm, WorkOrderForm,
+    DocumentUploadForm, OrganizationSettingsForm, AdminCredentialsForm,
+    BannerForm, ReviewForm, WorkOrderItemForm,
+    AppointmentItemForm, CompetencyForm, ClientForm, ClientCreateForm, ContactSettingsForm,
+    WorkOrderDetailForm, WorkOrderMaterialForm, WorkOrderAdditionalWorkForm,
 )
 
 bp = Blueprint("admin", __name__)
+
+
+def _find_duplicate_inventory_line(order, title: str, unit: str):
+    """Позиция с тем же наименованием и ед. изм. в деталях или старых запчастях."""
+    tk = work_title_key(title or "")
+    uk = work_title_key((unit or "шт.").strip())
+    for d in order.details or []:
+        if work_title_key(d.title or "") == tk and work_title_key(d.unit or "") == uk:
+            return d, "detail"
+    for p in order.parts or []:
+        if work_title_key(p.title or "") == tk and work_title_key(p.unit or "") == uk:
+            return p, "part"
+    return None, None
+
+
+def _admin_issue_media_bundle(appointment: Appointment) -> tuple[list[list[dict]], str]:
+    """Вложения к пунктам описания (для админки и JSON)."""
+    items_text = appointment.problem_items()
+    n = len(items_text)
+    media_rows = db.session.execute(
+        db.select(AppointmentIssueMedia)
+        .where(AppointmentIssueMedia.appointment_id == appointment.id)
+        .order_by(
+            AppointmentIssueMedia.issue_slot.asc(),
+            AppointmentIssueMedia.sort_order.asc(),
+            AppointmentIssueMedia.id.asc(),
+        )
+    ).scalars().all()
+    issue_media_slots: list[list[dict]] = [[] for _ in range(n)]
+    media_ids: list[int] = []
+    for m in media_rows:
+        media_ids.append(m.id)
+        if 0 <= m.issue_slot < n:
+            issue_media_slots[m.issue_slot].append(
+                {
+                    "id": m.id,
+                    "mime": m.mime,
+                    "url": url_for(
+                        "admin.appointment_issue_media_file",
+                        appointment_id=appointment.id,
+                        media_id=m.id,
+                    ),
+                }
+            )
+    return issue_media_slots, issue_media_fingerprint(media_ids)
 
 
 def admin_required(fn):
@@ -35,12 +103,252 @@ def admin_required(fn):
     return wrapper
 
 
+def _parse_work_hours_range(work_hours: str | None) -> tuple[time, time] | None:
+    if not work_hours:
+        return None
+    matches = re.findall(r"(\d{1,2})(?::(\d{2}))?", work_hours)
+    if len(matches) < 2:
+        return None
+    start_hour, start_min = matches[0]
+    end_hour, end_min = matches[1]
+    return (
+        time(int(start_hour), int(start_min or 0)),
+        time(int(end_hour), int(end_min or 0)),
+    )
+
+
+def _resequence(items) -> None:
+    for index, item in enumerate(items, start=1):
+        item.sort_order = index
+
+
 @bp.get("/")
 @admin_required
 def index():
     appointments_count = db.session.query(Appointment).count()
     active_masters_count = db.session.query(Master).filter_by(is_active=True).count()
-    return render_template("admin/index.html", appointments_count=appointments_count, active_masters_count=active_masters_count)
+    clients_count = db.session.query(User).filter_by(role="client").count()
+    work_orders_count = db.session.query(WorkOrder).count()
+
+    appointment_status_counts = {
+        "new": db.session.query(Appointment).filter_by(status="new").count(),
+        "confirmed": db.session.query(Appointment).filter_by(status="confirmed").count(),
+        "in_progress": db.session.query(Appointment).filter_by(status="in_progress").count(),
+        "done": db.session.query(Appointment).filter_by(status="done").count(),
+    }
+
+    active_masters = db.session.execute(
+        db.select(Master).where(Master.is_active.is_(True)).order_by(Master.name.asc())
+    ).scalars().all()
+    today = datetime.now().date()
+    dashboard_days = [today + timedelta(days=offset) for offset in range(7)]
+    dashboard_days_set = set(dashboard_days)
+    range_start = datetime.combine(today, time.min)
+    range_end = datetime.combine(dashboard_days[-1], time.max)
+
+    upcoming_appointments = db.session.execute(
+        db.select(Appointment)
+        .where(Appointment.start_at >= datetime.combine(today, time.min))
+        .order_by(Appointment.start_at.asc())
+        .limit(8)
+        .options(
+            selectinload(Appointment.slots).selectinload(AppointmentSlot.slot),
+            selectinload(Appointment.client),
+            selectinload(Appointment.master),
+        )
+    ).scalars().all()
+
+    master_ids = [m.id for m in active_masters]
+    appointments_by_master_day: dict[tuple[int, datetime.date], int] = defaultdict(int)
+    if master_ids:
+        slot_touches_window = exists(
+            db.select(1)
+            .select_from(AppointmentSlot)
+            .join(TimeSlot, TimeSlot.id == AppointmentSlot.slot_id)
+            .where(AppointmentSlot.appointment_id == Appointment.id)
+            .where(TimeSlot.start_at >= range_start)
+            .where(TimeSlot.start_at <= range_end)
+        )
+        start_in_window = and_(
+            Appointment.start_at >= range_start,
+            Appointment.start_at <= range_end,
+        )
+        heatmap_appointments = db.session.execute(
+            db.select(Appointment)
+            .where(Appointment.master_id.in_(master_ids))
+            .where(or_(slot_touches_window, start_in_window))
+            .options(selectinload(Appointment.slots).selectinload(AppointmentSlot.slot))
+        ).unique().scalars().all()
+        for appt in heatmap_appointments:
+            days: set[date] = set()
+            ap_slots = [x for x in appt.slots if x.slot]
+            if ap_slots:
+                for x in ap_slots:
+                    d = x.slot.start_at.date()
+                    if d in dashboard_days_set:
+                        days.add(d)
+            elif appt.start_at:
+                d = appt.start_at.date()
+                if d in dashboard_days_set:
+                    days.add(d)
+            for d in days:
+                appointments_by_master_day[(appt.master_id, d)] += 1
+
+    master_load_rows = []
+    for master in active_masters:
+        cells = []
+        weekly_total = 0
+        for day in dashboard_days:
+            count = appointments_by_master_day.get((master.id, day), 0)
+            weekly_total += count
+            if count == 0:
+                level = "free"
+            elif count == 1:
+                level = "low"
+            elif count == 2:
+                level = "medium"
+            else:
+                level = "high"
+            cells.append({"date": day, "count": count, "level": level})
+        master_load_rows.append({"master": master, "cells": cells, "weekly_total": weekly_total})
+
+    return render_template(
+        "admin/index.html",
+        appointments_count=appointments_count,
+        active_masters_count=active_masters_count,
+        clients_count=clients_count,
+        work_orders_count=work_orders_count,
+        appointment_status_counts=appointment_status_counts,
+        dashboard_days=dashboard_days,
+        master_load_rows=master_load_rows,
+        upcoming_appointments=upcoming_appointments,
+    )
+
+# --- Клиенты ---
+
+@bp.get("/clients")
+@admin_required
+def clients():
+    all_clients = db.session.execute(
+        db.select(User).where(User.role == "client").order_by(User.created_at.desc())
+    ).scalars().all()
+    return render_template("admin/clients/index.html", clients=all_clients)
+
+
+@bp.route("/clients/new", methods=["GET", "POST"])
+@admin_required
+def client_create():
+    form = ClientCreateForm()
+    if form.validate_on_submit():
+        phone = normalize_phone(form.phone.data)
+        if not phone:
+            flash("Некорректный телефон", "danger")
+            return render_template("admin/clients/new.html", form=form)
+
+        existing = db.session.execute(db.select(User).where(User.phone == phone)).scalar_one_or_none()
+        if existing:
+            flash("Пользователь с таким телефоном уже существует", "warning")
+            return render_template("admin/clients/new.html", form=form)
+
+        user = User(phone=phone, name=form.name.data.strip(), role="client", is_active=bool(form.is_active.data))
+        user.set_password(form.password.data)
+        wa = (form.client_whatsapp.data or "").strip()
+        user.client_whatsapp = wa or None
+        tg = normalize_telegram_username(form.client_telegram.data)
+        user.client_telegram = tg or None
+        em = (form.client_email.data or "").strip()
+        user.client_email = em or None
+        db.session.add(user)
+        db.session.commit()
+        flash("Клиент создан", "success")
+        return redirect(url_for("admin.clients"))
+
+    return render_template("admin/clients/new.html", form=form)
+
+
+@bp.post("/clients/delete/<int:user_id>")
+@admin_required
+def client_delete(user_id):
+    client = db.session.get(User, user_id)
+    if not client or client.role != "client":
+        abort(404)
+
+    n_appt = (
+        db.session.scalar(
+            db.select(db.func.count()).select_from(Appointment).where(Appointment.client_user_id == client.id)
+        )
+        or 0
+    )
+    n_wo = (
+        db.session.scalar(
+            db.select(db.func.count()).select_from(WorkOrder).where(WorkOrder.client_user_id == client.id)
+        )
+        or 0
+    )
+    if n_appt or n_wo:
+        flash(
+            "Нельзя удалить клиента: есть связанные записи (заявки: "
+            f"{n_appt}, заказ-наряды: {n_wo}). Сначала архивируйте или переназначьте данные.",
+            "danger",
+        )
+        return redirect(url_for("admin.clients"))
+
+    db.session.execute(delete(TelegramLinkToken).where(TelegramLinkToken.user_id == client.id))
+    db.session.delete(client)
+    db.session.commit()
+    flash("Клиент удалён", "info")
+    return redirect(url_for("admin.clients"))
+
+
+@bp.route("/clients/edit/<int:user_id>", methods=["GET", "POST"])
+@admin_required
+def client_edit(user_id):
+    client = db.session.get(User, user_id)
+    if not client or client.role != "client":
+        abort(404)
+
+    if request.method == "GET":
+        form = ClientForm(obj=client)
+        form.password.data = ""
+        form.password_confirm.data = ""
+    else:
+        form = ClientForm(obj=client)
+
+    if form.validate_on_submit():
+        phone = normalize_phone(form.phone.data)
+        if not phone:
+            flash("Некорректный телефон", "danger")
+            return render_template("admin/clients/edit.html", form=form, client=client)
+
+        existing = db.session.execute(
+            db.select(User).where(User.phone == phone, User.id != client.id)
+        ).scalar_one_or_none()
+        if existing:
+            flash("Пользователь с таким телефоном уже существует", "warning")
+            return render_template("admin/clients/edit.html", form=form, client=client)
+
+        client.name = form.name.data.strip()
+        client.phone = phone
+        client.is_active = bool(form.is_active.data)
+        wa = (form.client_whatsapp.data or "").strip()
+        client.client_whatsapp = wa or None
+        client.client_telegram = normalize_telegram_username(form.client_telegram.data) or None
+        client.client_email = (form.client_email.data or "").strip() or None
+        new_pw = (form.password.data or "").strip()
+        if new_pw:
+            client.set_password(new_pw)
+        db.session.commit()
+        flash("Данные клиента сохранены", "success")
+        return redirect(url_for("admin.clients"))
+
+    if request.method == "POST" and form.errors:
+        parts = []
+        for fname, errs in form.errors.items():
+            for err in errs:
+                parts.append(f"{fname}: {err}")
+        flash("Изменения не сохранены: " + "; ".join(parts), "danger")
+
+    return render_template("admin/clients/edit.html", form=form, client=client)
 
 # --- Мастера ---
 
@@ -88,7 +396,9 @@ def master_edit(master_id=None):
 @bp.get("/competencies")
 @admin_required
 def competencies():
-    all_competencies = db.session.execute(db.select(Competency).order_by(Competency.title)).scalars().all()
+    all_competencies = db.session.execute(
+        db.select(Competency).order_by(Competency.sort_order.asc(), Competency.title.asc())
+    ).scalars().all()
     return render_template("admin/competencies/index.html", competencies=all_competencies)
 
 @bp.route("/competencies/add", methods=["GET", "POST"])
@@ -96,15 +406,16 @@ def competencies():
 @admin_required
 def competency_edit(competency_id=None):
     competency = db.session.get(Competency, competency_id) if competency_id else Competency()
+    next_url = request.args.get("next") or request.form.get("next")
     form = CompetencyForm(obj=competency)
     if form.validate_on_submit():
         form.populate_obj(competency)
         if not competency_id:
             db.session.add(competency)
         db.session.commit()
-        flash("Специализация сохранена", "success")
-        return redirect(url_for("admin.competencies"))
-    return render_template("admin/competencies/edit.html", form=form, competency=competency)
+        flash("Участок сохранен", "success")
+        return redirect(next_url or url_for("admin.work_tree"))
+    return render_template("admin/competencies/edit.html", form=form, competency=competency, next_url=next_url)
 
 @bp.route("/competencies/delete/<int:competency_id>", methods=["POST"])
 @admin_required
@@ -114,7 +425,7 @@ def competency_delete(competency_id):
         abort(404)
     db.session.delete(competency)
     db.session.commit()
-    flash("Специализация удалена", "info")
+    flash("Участок удален", "info")
     return redirect(url_for("admin.competencies"))
 
 # --- Услуги (Работы) ---
@@ -122,7 +433,11 @@ def competency_delete(competency_id):
 @bp.get("/works")
 @admin_required
 def works():
-    all_works = db.session.execute(db.select(Work).order_by(Work.title)).scalars().all()
+    all_works = db.session.execute(
+        db.select(Work).join(WorkCategory).order_by(
+            WorkCategory.sort_order.asc(), Work.sort_order.asc(), Work.title.asc()
+        )
+    ).scalars().all()
     return render_template("admin/works/index.html", works=all_works)
 
 @bp.route("/works/add", methods=["GET", "POST"])
@@ -130,27 +445,45 @@ def works():
 @admin_required
 def work_edit(work_id=None):
     work = db.session.get(Work, work_id) if work_id else Work()
+    next_url = request.args.get("next") or request.form.get("next")
     form = WorkForm(obj=work)
     
-    categories = db.session.execute(db.select(WorkCategory).order_by(WorkCategory.title)).scalars().all()
-    form.category_id.choices = [(c.id, c.title) for c in categories]
+    categories = db.session.execute(
+        db.select(WorkCategory).order_by(WorkCategory.title)
+    ).scalars().all()
+    form.category_id.choices = [
+        (
+            c.id,
+            f"{c.competency.title} / {c.title}" if c.competency else c.title,
+        )
+        for c in categories
+    ]
+
+    if request.method == "GET" and not work_id:
+        preselected_category_id = request.args.get("category_id", type=int)
+        if preselected_category_id:
+            form.category_id.data = preselected_category_id
     
     if form.validate_on_submit():
         form.populate_obj(work)
         if not work_id:
             db.session.add(work)
         db.session.commit()
-        flash("Специализация сохранена", "success")
-        return redirect(url_for("admin.works"))
+        flash("Операция сохранена", "success")
+        return redirect(next_url or url_for("admin.work_tree"))
     
-    return render_template("admin/works/edit.html", form=form, work=work)
+    return render_template("admin/works/edit.html", form=form, work=work, next_url=next_url)
 
 # --- Категории ---
 
 @bp.get("/categories")
 @admin_required
 def categories():
-    all_cats = db.session.execute(db.select(WorkCategory).order_by(WorkCategory.title)).scalars().all()
+    all_cats = db.session.execute(
+        db.select(WorkCategory).order_by(
+            WorkCategory.competency_id.asc(), WorkCategory.sort_order.asc(), WorkCategory.title.asc()
+        )
+    ).scalars().all()
     return render_template("admin/categories/index.html", categories=all_cats)
 
 @bp.route("/categories/add", methods=["GET", "POST"])
@@ -158,15 +491,287 @@ def categories():
 @admin_required
 def category_edit(cat_id=None):
     cat = db.session.get(WorkCategory, cat_id) if cat_id else WorkCategory()
+    next_url = request.args.get("next") or request.form.get("next")
     form = CategoryForm(obj=cat)
+    competencies = db.session.execute(db.select(Competency).order_by(Competency.title)).scalars().all()
+    form.competency_id.choices = [(c.id, c.title) for c in competencies]
+
+    if request.method == "GET" and not cat_id:
+        preselected_competency_id = request.args.get("competency_id", type=int)
+        if preselected_competency_id:
+            form.competency_id.data = preselected_competency_id
+
     if form.validate_on_submit():
         form.populate_obj(cat)
         if not cat_id:
             db.session.add(cat)
         db.session.commit()
-        flash("Категория сохранена", "success")
-        return redirect(url_for("admin.categories"))
-    return render_template("admin/categories/edit.html", form=form, category=cat)
+        flash("Категория операции сохранена", "success")
+        return redirect(next_url or url_for("admin.work_tree"))
+    return render_template("admin/categories/edit.html", form=form, category=cat, next_url=next_url)
+
+
+@bp.get("/work-tree")
+@admin_required
+def work_tree():
+    sections = db.session.execute(
+        db.select(Competency).order_by(Competency.sort_order.asc(), Competency.title.asc())
+    ).scalars().all()
+    categories = db.session.execute(
+        db.select(WorkCategory).order_by(
+            WorkCategory.competency_id.asc(), WorkCategory.sort_order.asc(), WorkCategory.title.asc()
+        )
+    ).scalars().all()
+    operations = db.session.execute(
+        db.select(Work).order_by(Work.category_id.asc(), Work.sort_order.asc(), Work.title.asc())
+    ).scalars().all()
+
+    categories_by_section: dict[int | None, list[WorkCategory]] = {}
+    for category in categories:
+        categories_by_section.setdefault(category.competency_id, []).append(category)
+
+    operations_by_category: dict[int, list[Work]] = {}
+    for operation in operations:
+        operations_by_category.setdefault(operation.category_id, []).append(operation)
+
+    return render_template(
+        "admin/work_tree.html",
+        sections=sections,
+        categories_by_section=categories_by_section,
+        operations_by_category=operations_by_category,
+    )
+
+
+@bp.post("/work-tree/reorder")
+@admin_required
+def work_tree_reorder():
+    payload = request.get_json(silent=True) or {}
+    drag_type = payload.get("drag_type")
+    drag_id = payload.get("drag_id")
+    target_type = payload.get("target_type")
+    target_id = payload.get("target_id")
+    position = payload.get("position", "inside")
+
+    if not all([drag_type, drag_id, target_type, target_id]):
+        return jsonify({"ok": False, "message": "Недостаточно данных для перемещения."}), 400
+
+    drag_id = int(drag_id)
+    target_id = int(target_id)
+
+    if drag_type == "competency":
+        if target_type != "competency" or position not in {"before", "after"}:
+            return jsonify({"ok": False, "message": "Участки можно переставлять только между собой."}), 400
+        dragged = db.session.get(Competency, drag_id)
+        target = db.session.get(Competency, target_id)
+        if not dragged or not target:
+            return jsonify({"ok": False, "message": "Участок не найден."}), 404
+
+        siblings = db.session.execute(
+            db.select(Competency).order_by(Competency.sort_order.asc(), Competency.title.asc())
+        ).scalars().all()
+        siblings = [item for item in siblings if item.id != dragged.id]
+        target_index = next((i for i, item in enumerate(siblings) if item.id == target.id), len(siblings))
+        insert_index = target_index if position == "before" else target_index + 1
+        siblings.insert(insert_index, dragged)
+        _resequence(siblings)
+
+    elif drag_type == "category":
+        dragged = db.session.get(WorkCategory, drag_id)
+        if not dragged:
+            return jsonify({"ok": False, "message": "Категория операции не найдена."}), 404
+
+        if target_type == "competency":
+            target = db.session.get(Competency, target_id)
+            if not target:
+                return jsonify({"ok": False, "message": "Участок не найден."}), 404
+            dragged.competency_id = target.id
+            siblings = db.session.execute(
+                db.select(WorkCategory)
+                .where(WorkCategory.competency_id == target.id, WorkCategory.id != dragged.id)
+                .order_by(WorkCategory.sort_order.asc(), WorkCategory.title.asc())
+            ).scalars().all()
+            siblings.append(dragged)
+            _resequence(siblings)
+        elif target_type == "category" and position in {"before", "after"}:
+            target = db.session.get(WorkCategory, target_id)
+            if not target:
+                return jsonify({"ok": False, "message": "Категория операции не найдена."}), 404
+            dragged.competency_id = target.competency_id
+            siblings = db.session.execute(
+                db.select(WorkCategory)
+                .where(WorkCategory.competency_id == target.competency_id, WorkCategory.id != dragged.id)
+                .order_by(WorkCategory.sort_order.asc(), WorkCategory.title.asc())
+            ).scalars().all()
+            target_index = next((i for i, item in enumerate(siblings) if item.id == target.id), len(siblings))
+            insert_index = target_index if position == "before" else target_index + 1
+            siblings.insert(insert_index, dragged)
+            _resequence(siblings)
+        else:
+            return jsonify({"ok": False, "message": "Категории можно перемещать только в участки или между категориями."}), 400
+
+    elif drag_type == "work":
+        dragged = db.session.get(Work, drag_id)
+        if not dragged:
+            return jsonify({"ok": False, "message": "Операция не найдена."}), 404
+
+        if target_type == "category":
+            target = db.session.get(WorkCategory, target_id)
+            if not target:
+                return jsonify({"ok": False, "message": "Категория операции не найдена."}), 404
+            dragged.category_id = target.id
+            siblings = db.session.execute(
+                db.select(Work)
+                .where(Work.category_id == target.id, Work.id != dragged.id)
+                .order_by(Work.sort_order.asc(), Work.title.asc())
+            ).scalars().all()
+            siblings.append(dragged)
+            _resequence(siblings)
+        elif target_type == "work" and position in {"before", "after"}:
+            target = db.session.get(Work, target_id)
+            if not target:
+                return jsonify({"ok": False, "message": "Операция не найдена."}), 404
+            dragged.category_id = target.category_id
+            siblings = db.session.execute(
+                db.select(Work)
+                .where(Work.category_id == target.category_id, Work.id != dragged.id)
+                .order_by(Work.sort_order.asc(), Work.title.asc())
+            ).scalars().all()
+            target_index = next((i for i, item in enumerate(siblings) if item.id == target.id), len(siblings))
+            insert_index = target_index if position == "before" else target_index + 1
+            siblings.insert(insert_index, dragged)
+            _resequence(siblings)
+        else:
+            return jsonify({"ok": False, "message": "Операции можно перемещать только в категории или между операциями."}), 400
+    else:
+        return jsonify({"ok": False, "message": "Неизвестный тип узла."}), 400
+
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@bp.post("/work-tree/work/<int:work_id>/inline-update")
+@admin_required
+def work_tree_work_inline_update(work_id):
+    work = db.session.get(Work, work_id)
+    if not work:
+        return jsonify({"ok": False, "message": "Операция не найдена."}), 404
+
+    payload = request.get_json(silent=True) or {}
+    field = payload.get("field")
+    value = payload.get("value")
+
+    if field not in {"duration_min", "base_price"}:
+        return jsonify({"ok": False, "message": "Недопустимое поле."}), 400
+
+    try:
+        numeric_value = int(value)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "Нужно указать число."}), 400
+
+    if numeric_value < 0:
+        return jsonify({"ok": False, "message": "Значение не может быть отрицательным."}), 400
+
+    setattr(work, field, numeric_value)
+    db.session.commit()
+    return jsonify(
+        {
+            "ok": True,
+            "field": field,
+            "value": numeric_value,
+            "display": f"{numeric_value} МИН" if field == "duration_min" else f"{numeric_value} РУБ",
+        }
+    )
+
+@bp.post("/work-tree/delete")
+@admin_required
+def work_tree_delete():
+    payload = request.get_json(silent=True) or {}
+    node_type = payload.get("node_type")
+    node_id = payload.get("node_id")
+
+    if not node_type or not node_id:
+        return jsonify({"ok": False, "message": "Неверные параметры запроса."}), 400
+
+    try:
+        if node_type == "competency":
+            node = db.session.get(Competency, node_id)
+            if not node:
+                return jsonify({"ok": False, "message": "Участок не найден."}), 404
+            
+            # Cascade delete manually since we didn't specify cascade="all, delete" in models
+            cats = db.session.execute(db.select(WorkCategory).where(WorkCategory.competency_id == node.id)).scalars().all()
+            for cat in cats:
+                works = db.session.execute(db.select(Work).where(Work.category_id == cat.id)).scalars().all()
+                for w in works:
+                    db.session.delete(w)
+                db.session.delete(cat)
+            
+            # Delete MasterCompetency links
+            db.session.execute(db.delete(MasterCompetency).where(MasterCompetency.competency_id == node.id))
+            db.session.delete(node)
+
+        elif node_type == "category":
+            node = db.session.get(WorkCategory, node_id)
+            if not node:
+                return jsonify({"ok": False, "message": "Категория не найдена."}), 404
+                
+            works = db.session.execute(db.select(Work).where(Work.category_id == node.id)).scalars().all()
+            for w in works:
+                db.session.delete(w)
+            db.session.delete(node)
+
+        elif node_type == "work":
+            node = db.session.get(Work, node_id)
+            if not node:
+                return jsonify({"ok": False, "message": "Операция не найдена."}), 404
+            db.session.delete(node)
+            
+        else:
+            return jsonify({"ok": False, "message": "Неизвестный тип узла."}), 400
+
+        db.session.commit()
+        return jsonify({"ok": True})
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"ok": False, "message": "Невозможно удалить узел. Возможно, он используется в заявках или других документах."}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok": False, "message": str(e)}), 500
+
+
+@bp.post("/work-tree/rename")
+@admin_required
+def work_tree_rename():
+    payload = request.get_json(silent=True) or {}
+    node_type = payload.get("node_type")
+    node_id = int(payload.get("node_id") or 0)
+    field = payload.get("field", "title")
+    value = (payload.get("value") or "").strip()
+
+    if not node_type or not node_id or not value:
+        return jsonify({"ok": False, "message": "Недостаточно данных."}), 400
+
+    if node_type == "competency":
+        item = db.session.get(Competency, node_id)
+        if not item:
+            return jsonify({"ok": False, "message": "Участок не найден."}), 404
+        item.title = value
+    elif node_type == "category":
+        item = db.session.get(WorkCategory, node_id)
+        if not item:
+            return jsonify({"ok": False, "message": "Категория не найдена."}), 404
+        item.title = value
+    elif node_type == "work":
+        item = db.session.get(Work, node_id)
+        if not item:
+            return jsonify({"ok": False, "message": "Операция не найдена."}), 404
+        item.title = value
+    else:
+        return jsonify({"ok": False, "message": "Неизвестный тип узла."}), 400
+
+    db.session.commit()
+    return jsonify({"ok": True, "value": value})
+
 
 # --- Расписание (Слоты) ---
 
@@ -188,8 +793,22 @@ def schedule(master_id):
         .where(TimeSlot.start_at <= datetime.combine(end_date, time.max))
         .order_by(TimeSlot.start_at)
     ).scalars().all()
-    
-    return render_template("admin/schedule/view.html", master=master, slots=slots)
+    booked_slot_ids = set(
+        db.session.execute(
+            db.select(AppointmentSlot.slot_id).where(
+                AppointmentSlot.slot_id.in_([slot.id for slot in slots])
+            )
+        ).scalars().all()
+    ) if slots else set()
+
+    return render_template(
+        "admin/schedule/view.html",
+        master=master,
+        slots=slots,
+        booked_slot_ids=booked_slot_ids,
+        today_str=today.isoformat(),
+        end_date_str=end_date.isoformat(),
+    )
 
 @bp.route("/schedule/generate/<int:master_id>", methods=["POST"])
 @admin_required
@@ -197,46 +816,142 @@ def schedule_generate(master_id):
     master = db.session.get(Master, master_id)
     if not master:
         abort(404)
-        
-    days = int(request.form.get("days", 7))
-    start_time_str = request.form.get("start_time", "09:00")
-    end_time_str = request.form.get("end_time", "18:00")
-    
-    start_time = time.fromisoformat(start_time_str)
-    end_time = time.fromisoformat(end_time_str)
-    
+
+    settings_obj = OrganizationSettings.get_settings()
+    slot_minutes = int(settings_obj.slot_minutes or 60)
+    if slot_minutes < 15:
+        slot_minutes = 15
+
+    work_hours_range = _parse_work_hours_range(settings_obj.work_hours)
+    if not work_hours_range:
+        flash("Сначала укажите корректные часы работы организации в настройках системы.", "warning")
+        return redirect(url_for("admin.schedule", master_id=master_id))
+
+    selected_weekdays = set(request.form.getlist("weekdays"))
+    company_work_days = set(settings_obj.work_days.split(",")) if settings_obj.work_days else set()
+    disallowed_weekdays = selected_weekdays - company_work_days if company_work_days else set()
+    allowed_weekdays = selected_weekdays & company_work_days if selected_weekdays else company_work_days
+
+    if disallowed_weekdays:
+        flash("Выбраны дни, которые не являются рабочими для предприятия. Генерация для них запрещена.", "warning")
+
+    if not allowed_weekdays:
+        flash("Не выбраны рабочие дни предприятия для генерации слотов.", "warning")
+        return redirect(url_for("admin.schedule", master_id=master_id))
+
+    start_time, end_time = work_hours_range
+    if start_time >= end_time:
+        flash("Часы работы организации указаны некорректно.", "warning")
+        return redirect(url_for("admin.schedule", master_id=master_id))
+
     today = datetime.now().date()
+    month_end = today.replace(day=28) + timedelta(days=4)
+    month_end = month_end - timedelta(days=month_end.day)
     count = 0
-    
-    for i in range(days):
-        day = today + timedelta(days=i)
+    skipped_non_working = 0
+
+    day = today
+    while day <= month_end:
+        if str(day.weekday()) not in allowed_weekdays:
+            if str(day.weekday()) in selected_weekdays and str(day.weekday()) not in company_work_days:
+                skipped_non_working += 1
+            day += timedelta(days=1)
+            continue
+
         current_dt = datetime.combine(day, start_time)
         day_end_dt = datetime.combine(day, end_time)
-        
-        while current_dt + timedelta(minutes=30) <= day_end_dt:
+
+        while current_dt + timedelta(minutes=slot_minutes) <= day_end_dt:
             slot_start = current_dt
-            slot_end = current_dt + timedelta(minutes=30)
-            
-            # Проверяем, есть ли уже такой слот
+            slot_end = current_dt + timedelta(minutes=slot_minutes)
+
             exists = db.session.execute(
                 db.select(TimeSlot)
                 .where(TimeSlot.master_id == master_id, TimeSlot.start_at == slot_start)
             ).scalar()
-            
+
             if not exists:
-                new_slot = TimeSlot(
-                    master_id=master_id,
-                    start_at=slot_start,
-                    end_at=slot_end,
-                    status="free"
+                db.session.add(
+                    TimeSlot(
+                        master_id=master_id,
+                        start_at=slot_start,
+                        end_at=slot_end,
+                        status="free"
+                    )
                 )
-                db.session.add(new_slot)
                 count += 1
-            
+
             current_dt = slot_end
-            
+
+        day += timedelta(days=1)
+
     db.session.commit()
-    flash(f"Сгенерировано слотов: {count}", "success")
+    message = f"Сгенерировано слотов: {count} (интервал {slot_minutes} мин)"
+    if skipped_non_working:
+        message += f". Пропущено нерабочих дней предприятия: {skipped_non_working}"
+    flash(message, "success")
+    return redirect(url_for("admin.schedule", master_id=master_id))
+
+
+@bp.post("/schedule/delete-all/<int:master_id>")
+@admin_required
+def schedule_delete_all(master_id):
+    master = db.session.get(Master, master_id)
+    if not master:
+        abort(404)
+
+    date_from = datetime.fromisoformat(request.form.get("date_from")).date()
+    date_to = datetime.fromisoformat(request.form.get("date_to")).date()
+    used_slot_ids = db.select(AppointmentSlot.slot_id)
+    slots_to_delete = db.session.execute(
+        db.select(TimeSlot)
+        .where(TimeSlot.master_id == master_id)
+        .where(TimeSlot.start_at >= datetime.combine(date_from, time.min))
+        .where(TimeSlot.start_at <= datetime.combine(date_to, time.max))
+        .where(~TimeSlot.id.in_(used_slot_ids))
+    ).scalars().all()
+
+    deleted = 0
+    for slot in slots_to_delete:
+        db.session.delete(slot)
+        deleted += 1
+
+    db.session.commit()
+    flash(f"Удалено слотов: {deleted}", "success")
+    return redirect(url_for("admin.schedule", master_id=master_id))
+
+
+@bp.post("/schedule/delete-selected/<int:master_id>")
+@admin_required
+def schedule_delete_selected(master_id):
+    slot_ids = [int(slot_id) for slot_id in request.form.getlist("slot_ids") if slot_id.isdigit()]
+    used_slot_ids = set(db.session.execute(db.select(AppointmentSlot.slot_id).where(AppointmentSlot.slot_id.in_(slot_ids))).scalars().all()) if slot_ids else set()
+    slots = db.session.execute(db.select(TimeSlot).where(TimeSlot.master_id == master_id, TimeSlot.id.in_(slot_ids))).scalars().all()
+    deleted = 0
+    for slot in slots:
+        if slot.id in used_slot_ids:
+            continue
+        db.session.delete(slot)
+        deleted += 1
+    db.session.commit()
+    flash(f"Удалено слотов: {deleted}", "success")
+    return redirect(url_for("admin.schedule", master_id=master_id))
+
+
+@bp.post("/schedule/block-selected/<int:master_id>")
+@admin_required
+def schedule_block_selected(master_id):
+    slot_ids = [int(slot_id) for slot_id in request.form.getlist("slot_ids") if slot_id.isdigit()]
+    used_slot_ids = set(db.session.execute(db.select(AppointmentSlot.slot_id).where(AppointmentSlot.slot_id.in_(slot_ids))).scalars().all()) if slot_ids else set()
+    slots = db.session.execute(db.select(TimeSlot).where(TimeSlot.master_id == master_id, TimeSlot.id.in_(slot_ids))).scalars().all()
+    updated = 0
+    for slot in slots:
+        if slot.id in used_slot_ids:
+            continue
+        slot.status = "blocked"
+        updated += 1
+    db.session.commit()
+    flash(f"Заблокировано слотов: {updated}", "success")
     return redirect(url_for("admin.schedule", master_id=master_id))
 
 # --- Заявки (Requests) ---
@@ -245,14 +960,23 @@ def schedule_generate(master_id):
 @admin_required
 def appointments():
     all_appointments = db.session.execute(
-        db.select(Appointment).order_by(Appointment.created_at.desc())
+        db.select(Appointment)
+        .order_by(Appointment.created_at.desc())
+        .options(selectinload(Appointment.slots).selectinload(AppointmentSlot.slot))
     ).scalars().all()
     return render_template("admin/appointments/index.html", appointments=all_appointments)
 
 @bp.route("/appointments/<int:appointment_id>", methods=["GET", "POST"])
 @admin_required
 def appointment_detail(appointment_id):
-    appointment = db.session.get(Appointment, appointment_id)
+    appointment = db.session.execute(
+        db.select(Appointment)
+        .where(Appointment.id == appointment_id)
+        .options(
+            selectinload(Appointment.slots).selectinload(AppointmentSlot.slot),
+            selectinload(Appointment.client),
+        )
+    ).scalar_one_or_none()
     if not appointment:
         abort(404)
         
@@ -263,28 +987,478 @@ def appointment_detail(appointment_id):
     masters = db.session.execute(db.select(Master).where(Master.is_active == True)).scalars().all()
     form.master_id.choices = [(m.id, m.name) for m in masters]
     
-    # Загружаем список специализаций для добавления
-    works_list = db.session.execute(db.select(Work).where(Work.is_active == True).order_by(Work.title)).scalars().all()
-    item_form.work_id.choices = [(w.id, f"{w.title} ({w.base_price} руб.)") for w in works_list]
+    categories_list = db.session.execute(
+        db.select(WorkCategory).order_by(
+            WorkCategory.competency_id.asc(), WorkCategory.sort_order.asc(), WorkCategory.title.asc()
+        )
+    ).scalars().all()
+
+    sections = db.session.execute(
+        db.select(Competency).order_by(Competency.sort_order.asc(), Competency.title.asc())
+    ).scalars().all()
+    works_tree = db.session.execute(
+        db.select(Work)
+        .where(Work.is_active == True)
+        .order_by(Work.category_id.asc(), Work.sort_order.asc(), Work.title.asc())
+    ).scalars().all()
+
+    categories_by_section: dict[int | None, list[WorkCategory]] = {}
+    for cat in categories_list:
+        categories_by_section.setdefault(cat.competency_id, []).append(cat)
+
+    works_by_category: dict[int, list[Work]] = {}
+    for w in works_tree:
+        works_by_category.setdefault(w.category_id, []).append(w)
     
-    if form.validate_on_submit() and 'submit' in request.form:
-        # Обновляем поля
+    ap_slots_m = [x for x in appointment.slots if x.slot and x.slot.master_id == appointment.master_id]
+    ap_slots_m.sort(key=lambda x: x.slot.start_at)
+    current_slot_ids = [x.slot_id for x in ap_slots_m]
+
+    if form.validate_on_submit():
         appointment.master_id = form.master_id.data
-        appointment.start_at = form.start_at.data
-        # Если изменилось время начала, обновим и время окончания (по умолчанию +60 мин)
-        appointment.end_at = appointment.start_at + timedelta(minutes=60)
+        raw_ids = (request.form.get("time_slot_ids") or "").replace(",", " ").split()
+        slot_ids: list[int] = []
+        seen: set[int] = set()
+        for x in raw_ids:
+            if not x.strip().isdigit():
+                continue
+            i = int(x)
+            if i not in seen:
+                seen.add(i)
+                slot_ids.append(i)
+
+        if slot_ids:
+            slots_objs: list[TimeSlot] = []
+            for sid in slot_ids:
+                slot = db.session.get(TimeSlot, sid)
+                if not slot or slot.master_id != form.master_id.data:
+                    flash("Указан недопустимый временной слот.", "danger")
+                    return redirect(url_for("admin.appointment_detail", appointment_id=appointment.id))
+                other = db.session.execute(
+                    db.select(AppointmentSlot).where(
+                        AppointmentSlot.slot_id == slot.id,
+                        AppointmentSlot.appointment_id != appointment.id,
+                    )
+                ).scalar_one_or_none()
+                if other:
+                    flash("Один из слотов уже занят другой заявкой.", "danger")
+                    return redirect(url_for("admin.appointment_detail", appointment_id=appointment.id))
+                slots_objs.append(slot)
+
+            slots_objs.sort(key=lambda s: s.start_at)
+            for _, grp in groupby(slots_objs, key=lambda s: s.start_at.date()):
+                chunk = list(grp)
+                chunk.sort(key=lambda s: s.start_at)
+                for i in range(len(chunk) - 1):
+                    if chunk[i].end_at != chunk[i + 1].start_at:
+                        flash(
+                            "Внутри одного дня слоты должны идти подряд. Можно назначить визиты в несколько дней.",
+                            "danger",
+                        )
+                        return redirect(url_for("admin.appointment_detail", appointment_id=appointment.id))
+
+            appointment.start_at = slots_objs[0].start_at
+            appointment.end_at = slots_objs[-1].end_at
+            db.session.execute(delete(AppointmentSlot).where(AppointmentSlot.appointment_id == appointment.id))
+            for s in slots_objs:
+                db.session.add(AppointmentSlot(appointment_id=appointment.id, slot_id=s.id))
+        else:
+            appointment.start_at = form.start_at.data
+            appointment.end_at = appointment.start_at + timedelta(minutes=60)
+            db.session.execute(delete(AppointmentSlot).where(AppointmentSlot.appointment_id == appointment.id))
+
         appointment.status = form.status.data
         appointment.car_make = form.car_make.data
         appointment.car_model = form.car_model.data
         appointment.car_year = form.car_year.data
         appointment.car_number = form.car_number.data
+        appointment.win_number = normalize_win_number(form.win_number.data) or None
         appointment.problem_description = form.problem_description.data
-        
+
+        # Если статус заявки изменен на "confirmed" и заказ-наряд еще не создан, создаем его
+        if form.status.data == "confirmed" and not appointment.work_order:
+            order = WorkOrder(
+                appointment_id=appointment.id,
+                client_user_id=appointment.client_user_id,
+                master_id=appointment.master_id,
+                status="draft",
+                total_amount=0,
+            )
+            db.session.add(order)
+
+            # Переносим услуги из заявки в заказ-наряд
+            for item in appointment.items:
+                if bool(getattr(item, "declined_by_client", False)):
+                    continue
+                k1 = float(item.k1 or 1.0)
+                k2 = float(item.k2 or 1.0)
+                duration = int(round((item.duration_snapshot or 0) * k1))
+                price = int(round((item.price_snapshot or 0) * k2))
+                order_item = WorkOrderItem(
+                    work_order=order,
+                    title=item.work.title,
+                    duration=duration,
+                    price=price,
+                    comment=item.extra,
+                )
+                db.session.add(order_item)
+                if order.total_amount is None:
+                    order.total_amount = 0
+                order.total_amount += price
+
+            db.session.commit()
+            flash("Заказ-наряд создан", "success")
+
         db.session.commit()
         flash("Заявка успешно обновлена", "success")
         return redirect(url_for("admin.appointment_detail", appointment_id=appointment.id))
-        
-    return render_template("admin/appointments/detail.html", appointment=appointment, form=form, item_form=item_form)
+
+    issue_media_slots, issue_media_hash_val = _admin_issue_media_bundle(appointment)
+
+    cl = appointment.client
+    return render_template(
+        "admin/appointments/detail.html",
+        appointment=appointment,
+        form=form,
+        item_form=item_form,
+        categories=categories_list,
+        sections=sections,
+        categories_by_section=categories_by_section,
+        works_by_category=works_by_category,
+        problem_description_hash=problem_description_hash(appointment.problem_description),
+        issue_media_slots=issue_media_slots,
+        issue_media_hash=issue_media_hash_val,
+        current_slot_ids=current_slot_ids,
+        client_wa_url=client_whatsapp_url(cl) if cl else None,
+        client_tg_url=client_telegram_url(cl) if cl else None,
+        client_user=cl,
+    )
+
+
+@bp.post("/appointments/<int:appointment_id>/email-client")
+@admin_required
+def appointment_email_client(appointment_id: int):
+    appointment = db.session.get(Appointment, appointment_id)
+    if not appointment:
+        abort(404)
+    client = appointment.client
+    if not client:
+        flash("Клиент не найден.", "danger")
+        return redirect(url_for("admin.appointments"))
+
+    to = (client.client_email or "").strip()
+    if not to:
+        flash("У клиента не указан email в профиле.", "warning")
+        return redirect(url_for("admin.appointment_detail", appointment_id=appointment_id))
+
+    settings_obj = OrganizationSettings.get_settings()
+    subject = f"Заявка №{appointment.id}"
+    body = (
+        f"Здравствуйте, {client.name or 'клиент'}!\n\n"
+        f"Пишем по вашей заявке №{appointment.id}.\n"
+        f"При необходимости ответьте на это письмо.\n"
+    )
+    try:
+        send_organization_email([to], subject, body, settings=settings_obj)
+        flash(f"Письмо отправлено на {to}", "success")
+    except MailConfigurationError as e:
+        flash(str(e), "danger")
+    except smtplib.SMTPException as e:
+        flash(f"Ошибка SMTP: {e}", "danger")
+    except OSError as e:
+        flash(f"Сеть / соединение: {e}", "danger")
+    except Exception as e:
+        flash(f"Не удалось отправить: {e}", "danger")
+
+    return redirect(url_for("admin.appointment_detail", appointment_id=appointment_id))
+
+
+@bp.get("/appointments/<int:appointment_id>/available-slots-json")
+@admin_required
+def appointment_available_slots_json(appointment_id: int):
+    master_id = request.args.get("master_id", type=int)
+    if not master_id:
+        return jsonify({"ok": False, "message": "Укажите мастера."}), 400
+    appointment = db.session.get(Appointment, appointment_id)
+    if not appointment:
+        return jsonify({"ok": False, "message": "Заявка не найдена."}), 404
+
+    now_ts = datetime.now()
+    last_calendar_day = now_ts.date() + timedelta(days=60)
+    end_range = datetime.combine(last_calendar_day, time.max)
+
+    sub_other = db.select(AppointmentSlot.slot_id).where(AppointmentSlot.appointment_id != appointment_id)
+
+    slot_rows = db.session.execute(
+        db.select(TimeSlot)
+        .where(TimeSlot.master_id == master_id)
+        .where(TimeSlot.start_at >= now_ts)
+        .where(TimeSlot.start_at <= end_range)
+        .where(TimeSlot.status == "free")
+        .where(~TimeSlot.id.in_(sub_other))
+        .order_by(TimeSlot.start_at.asc())
+    ).scalars().all()
+
+    selected_slot_ids: list[int] = []
+    for ap_slot in appointment.slots:
+        if ap_slot.slot and ap_slot.slot.master_id == master_id:
+            selected_slot_ids.append(ap_slot.slot_id)
+    selected_slot_ids = list(dict.fromkeys(selected_slot_ids))
+    sel_ts = [db.session.get(TimeSlot, sid) for sid in selected_slot_ids]
+    sel_ts = [x for x in sel_ts if x]
+    sel_ts.sort(key=lambda s: s.start_at)
+    selected_slot_ids = [s.id for s in sel_ts]
+
+    seen = {s.id for s in slot_rows}
+    for sid in selected_slot_ids:
+        if sid not in seen:
+            extra = db.session.get(TimeSlot, sid)
+            if extra and extra.master_id == master_id:
+                slot_rows = list(slot_rows) + [extra]
+                seen.add(sid)
+    slot_rows = sorted(slot_rows, key=lambda x: x.start_at)
+
+    weekdays_ru = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
+    slots_payload = []
+    for s in slot_rows:
+        st = s.start_at
+        en = s.end_at
+        wd = weekdays_ru[st.weekday()]
+        label = f"{st.strftime('%d.%m.%Y')}  {wd}  {st.strftime('%H:%M')}–{en.strftime('%H:%M')}"
+        slots_payload.append(
+            {
+                "id": s.id,
+                "start_at": st.strftime("%Y-%m-%dT%H:%M:%S"),
+                "end_at": en.strftime("%Y-%m-%dT%H:%M:%S"),
+                "label": label,
+            }
+        )
+
+    all_master_slots = db.session.execute(
+        db.select(TimeSlot)
+        .where(TimeSlot.master_id == master_id)
+        .where(TimeSlot.start_at >= now_ts)
+        .where(TimeSlot.start_at <= end_range)
+        .order_by(TimeSlot.start_at.asc())
+    ).scalars().all()
+
+    slot_to_appt: dict[int, int] = {}
+    if all_master_slots:
+        mids = [s.id for s in all_master_slots]
+        for sid, aid in db.session.execute(
+            db.select(AppointmentSlot.slot_id, AppointmentSlot.appointment_id).where(AppointmentSlot.slot_id.in_(mids))
+        ).all():
+            slot_to_appt[int(sid)] = int(aid)
+
+    def _timeline_state(ts: TimeSlot) -> str:
+        if (ts.status or "") == "blocked":
+            return "blocked"
+        aid = slot_to_appt.get(ts.id)
+        if not aid:
+            return "free"
+        if aid == appointment_id:
+            return "self"
+        return "other"
+
+    by_day_tl: dict[str, list[dict]] = defaultdict(list)
+    today_iso = now_ts.date().isoformat()
+    for ts in all_master_slots:
+        dk = ts.start_at.date().isoformat()
+        if dk < today_iso:
+            continue
+        st = ts.start_at
+        en = ts.end_at
+        by_day_tl[dk].append(
+            {
+                "id": ts.id,
+                "start_at": st.strftime("%Y-%m-%dT%H:%M:%S"),
+                "end_at": en.strftime("%Y-%m-%dT%H:%M:%S"),
+                "state": _timeline_state(ts),
+            }
+        )
+
+    day_timelines = []
+    for dk in sorted(by_day_tl.keys()):
+        segs = sorted(by_day_tl[dk], key=lambda x: x["start_at"])
+        day_timelines.append({"date": dk, "segments": segs})
+
+    return jsonify(
+        {
+            "ok": True,
+            "selected_slot_ids": selected_slot_ids,
+            "slots": slots_payload,
+            "day_timelines": day_timelines,
+        }
+    )
+
+
+@bp.get("/appointments/<int:appointment_id>/work-tree-json")
+@admin_required
+def appointment_work_tree_json(appointment_id: int):
+    appointment = db.session.get(Appointment, appointment_id)
+    if not appointment:
+        return jsonify({"ok": False, "message": "Заявка не найдена."}), 404
+
+    categories_list = db.session.execute(
+        db.select(WorkCategory).order_by(
+            WorkCategory.competency_id.asc(), WorkCategory.sort_order.asc(), WorkCategory.title.asc()
+        )
+    ).scalars().all()
+
+    sections = db.session.execute(
+        db.select(Competency).order_by(Competency.sort_order.asc(), Competency.title.asc())
+    ).scalars().all()
+
+    works_tree = db.session.execute(
+        db.select(Work)
+        .where(Work.is_active == True)
+        .order_by(Work.category_id.asc(), Work.sort_order.asc(), Work.title.asc())
+    ).scalars().all()
+
+    categories_by_section: dict[int | None, list[WorkCategory]] = {}
+    for cat in categories_list:
+        categories_by_section.setdefault(cat.competency_id, []).append(cat)
+
+    works_by_category: dict[int, list[Work]] = {}
+    for w in works_tree:
+        works_by_category.setdefault(w.category_id, []).append(w)
+
+    sections_payload = []
+    for section in sections:
+        cats_payload = []
+        for cat in categories_by_section.get(section.id, []):
+            works_payload = []
+            for w in works_by_category.get(cat.id, []):
+                works_payload.append(
+                    {
+                        "id": int(w.id),
+                        "title": w.title,
+                        "duration_min": int(w.duration_min or 0),
+                        "base_price": int(w.base_price or 0),
+                    }
+                )
+            cats_payload.append({"id": int(cat.id), "title": cat.title, "works": works_payload})
+        sections_payload.append({"id": int(section.id), "title": section.title, "categories": cats_payload})
+
+    return jsonify({"ok": True, "sections": sections_payload})
+
+
+@bp.get("/appointments/<int:appointment_id>/items/status-json")
+@admin_required
+def appointment_items_status_json(appointment_id: int):
+    appointment = db.session.get(Appointment, appointment_id)
+    if not appointment:
+        return jsonify({"ok": False, "message": "Заявка не найдена."}), 404
+
+    rows = db.session.execute(
+        db.select(
+            AppointmentItem.id,
+            AppointmentItem.price_snapshot,
+            AppointmentItem.k2,
+            AppointmentItem.qty,
+            AppointmentItem.duration_snapshot,
+            AppointmentItem.k1,
+            Work.duration_min,
+            AppointmentItem.declined_by_client,
+        )
+        .join(Work, Work.id == AppointmentItem.work_id)
+        .where(AppointmentItem.appointment_id == appointment.id)
+        .order_by(AppointmentItem.id.asc())
+    ).all()
+
+    items = []
+    total_price = 0
+    total_duration = 0
+    for item_id, price_snapshot, k2, qty, duration_snapshot, k1, duration_min, declined_by_client in rows:
+        declined = bool(declined_by_client)
+        items.append({"id": int(item_id), "declined_by_client": declined})
+        if declined:
+            continue
+        q = int(qty or 1)
+        p = int(price_snapshot or 0)
+        d = int(duration_snapshot or duration_min or 0)
+        total_price += int(round(p * float(k2 or 1.0) * q))
+        total_duration += int(round(d * float(k1 or 1.0) * q))
+
+    issue_media_slots, im_hash = _admin_issue_media_bundle(appointment)
+
+    return jsonify(
+        {
+            "ok": True,
+            "items": items,
+            "total_price": int(total_price),
+            "total_duration": int(total_duration),
+            "problem_hash": problem_description_hash(appointment.problem_description),
+            "problem_description": appointment.problem_description or "",
+            "win_number": appointment.win_number or "",
+            "issue_media": issue_media_slots,
+            "issue_media_hash": im_hash,
+        }
+    )
+
+
+@bp.get("/appointments/<int:appointment_id>/issue-media/<int:media_id>/file")
+@admin_required
+def appointment_issue_media_file(appointment_id: int, media_id: int):
+    appointment = db.session.get(Appointment, appointment_id)
+    if not appointment:
+        abort(404)
+    m = db.session.get(AppointmentIssueMedia, media_id)
+    if not m or m.appointment_id != appointment.id:
+        abort(404)
+    directory = current_app.config["DOCUMENTS_DIR"]
+    rel = m.storage_path.replace("/", os.sep)
+    folder = os.path.dirname(rel)
+    name = os.path.basename(rel)
+    return send_from_directory(os.path.join(directory, folder), name, mimetype=m.mime)
+
+
+@bp.post("/appointments/<int:appointment_id>/issue-media/<int:media_id>/delete-json")
+@admin_required
+def appointment_issue_media_delete_json(appointment_id: int, media_id: int):
+    appointment = db.session.get(Appointment, appointment_id)
+    if not appointment:
+        return jsonify({"ok": False, "message": "Заявка не найдена."}), 404
+
+    m = db.session.get(AppointmentIssueMedia, media_id)
+    if not m or m.appointment_id != appointment.id:
+        return jsonify({"ok": False, "message": "Файл не найден."}), 404
+
+    delete_appointment_issue_media_file(m)
+    db.session.delete(m)
+    db.session.commit()
+
+    issue_media_slots, im_hash = _admin_issue_media_bundle(appointment)
+    return jsonify(
+        {
+            "ok": True,
+            "issue_media_hash": im_hash,
+            "issue_media": issue_media_slots,
+        }
+    )
+
+
+@bp.post("/appointments/<int:appointment_id>/problem-description-json")
+@admin_required
+def appointment_problem_description_json(appointment_id: int):
+    """Мгновенное сохранение текста неисправностей для синхронизации с кабинетом клиента (опрос snapshot-json)."""
+    appointment = db.session.get(Appointment, appointment_id)
+    if not appointment:
+        return jsonify({"ok": False, "message": "Заявка не найдена."}), 404
+
+    payload = request.get_json(silent=True) or {}
+    if "problem_description" not in payload:
+        return jsonify({"ok": False, "message": "Нет поля problem_description."}), 400
+
+    appointment.problem_description = str(payload.get("problem_description") or "")
+    db.session.commit()
+    return jsonify(
+        {
+            "ok": True,
+            "problem_hash": problem_description_hash(appointment.problem_description),
+        }
+    )
+
 
 @bp.post("/appointments/<int:appointment_id>/items/add")
 @admin_required
@@ -295,7 +1469,13 @@ def appointment_item_add(appointment_id):
         
     item_form = AppointmentItemForm()
     works_list = db.session.execute(db.select(Work).where(Work.is_active == True)).scalars().all()
-    item_form.work_id.choices = [(w.id, w.title) for w in works_list]
+    item_form.work_id.choices = [
+        (
+            w.id,
+            f"{w.category.competency.title + ' / ' if w.category and w.category.competency else ''}{w.category.title if w.category else 'Без категории'} / {w.title}",
+        )
+        for w in works_list
+    ]
     
     if item_form.validate_on_submit():
         work = db.session.get(Work, item_form.work_id.data)
@@ -310,6 +1490,235 @@ def appointment_item_add(appointment_id):
             db.session.commit()
             flash("Специализация добавлена в заявку", "success")
             
+    return redirect(url_for("admin.appointment_detail", appointment_id=appointment_id))
+
+
+@bp.post("/appointments/<int:appointment_id>/items/add-json")
+@admin_required
+def appointment_item_add_json(appointment_id):
+    appointment = db.session.get(Appointment, appointment_id)
+    if not appointment:
+        return jsonify({"ok": False, "message": "Заявка не найдена."}), 404
+
+    payload = request.get_json(silent=True) or {}
+    work_id = int(payload.get("work_id") or 0)
+    if work_id <= 0:
+        return jsonify({"ok": False, "message": "Некорректная работа."}), 400
+
+    work = db.session.get(Work, work_id)
+    if not work or not work.is_active:
+        return jsonify({"ok": False, "message": "Работа не найдена."}), 404
+
+    existing_item = db.session.execute(
+        db.select(
+            AppointmentItem.id,
+            AppointmentItem.k1,
+            AppointmentItem.k2,
+            AppointmentItem.extra,
+            AppointmentItem.qty,
+        ).where(
+            AppointmentItem.appointment_id == appointment.id,
+            AppointmentItem.work_id == work.id,
+        )
+    ).one_or_none()
+
+    if existing_item:
+        existing_item_id, k1, k2, extra, qty = existing_item
+        duration_snapshot = int(work.duration_min or 0)
+        price_snapshot = int(work.base_price or 0)
+        kk1 = float(k1 or 1.0)
+        kk2 = float(k2 or 1.0)
+        q = int(qty or 1)
+        return jsonify(
+            {
+                "ok": True,
+                "already": True,
+                "item_id": int(existing_item_id or 0),
+                "title": work.title,
+                "duration_snapshot": duration_snapshot,
+                "price_snapshot": price_snapshot,
+                "k1": kk1,
+                "k2": kk2,
+                "extra": (extra or ""),
+                "qty": q,
+                "total_duration": int(round(duration_snapshot * kk1 * q)),
+                "total_price": int(round(price_snapshot * kk2 * q)),
+            }
+        )
+
+    item = AppointmentItem(
+        appointment_id=appointment.id,
+        work_id=work.id,
+        price_snapshot=work.base_price,
+        duration_snapshot=work.duration_min,
+    )
+    db.session.add(item)
+    db.session.commit()
+    duration_snapshot = int(item.duration_snapshot or 0)
+    price_snapshot = int(item.price_snapshot or 0)
+    kk1 = float(item.k1 or 1.0)
+    kk2 = float(item.k2 or 1.0)
+    q = int(item.qty or 1)
+    return jsonify(
+        {
+            "ok": True,
+            "already": False,
+            "item_id": int(item.id),
+            "title": work.title,
+            "duration_snapshot": duration_snapshot,
+            "price_snapshot": price_snapshot,
+            "k1": kk1,
+            "k2": kk2,
+            "extra": (item.extra or ""),
+            "qty": q,
+            "total_duration": int(round(duration_snapshot * kk1 * q)),
+            "total_price": int(round(price_snapshot * kk2 * q)),
+        }
+    )
+
+
+@bp.post("/appointments/<int:appointment_id>/items/update-coeffs-json/<int:item_id>")
+@admin_required
+def appointment_item_update_coeffs_json(appointment_id: int, item_id: int):
+    item = db.session.get(AppointmentItem, item_id)
+    if not item or item.appointment_id != appointment_id:
+        return jsonify({"ok": False, "message": "Позиция не найдена."}), 404
+
+    payload = request.get_json(silent=True) or {}
+    k1_raw = payload.get("k1")
+    k2_raw = payload.get("k2")
+
+    try:
+        k1 = float(k1_raw)
+        k2 = float(k2_raw)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "К1/К2 должны быть числами."}), 400
+
+    if k1 <= 0 or k2 <= 0:
+        return jsonify({"ok": False, "message": "К1/К2 должны быть больше нуля."}), 400
+
+    item.k1 = k1
+    item.k2 = k2
+    db.session.commit()
+    duration_snapshot = int(item.duration_snapshot or 0)
+    price_snapshot = int(item.price_snapshot or 0)
+    kk1 = float(item.k1 or 1.0)
+    kk2 = float(item.k2 or 1.0)
+    q = int(item.qty or 1)
+    return jsonify(
+        {
+            "ok": True,
+            "k1": kk1,
+            "k2": kk2,
+            "qty": q,
+            "total_duration": int(round(duration_snapshot * kk1 * q)),
+            "total_price": int(round(price_snapshot * kk2 * q)),
+        }
+    )
+
+
+@bp.post("/appointments/<int:appointment_id>/items/update-extra-json/<int:item_id>")
+@admin_required
+def appointment_item_update_extra_json(appointment_id: int, item_id: int):
+    item = db.session.get(AppointmentItem, item_id)
+    if not item or item.appointment_id != appointment_id:
+        return jsonify({"ok": False, "message": "Позиция не найдена."}), 404
+
+    payload = request.get_json(silent=True) or {}
+    extra_raw = payload.get("extra")
+    extra = (extra_raw or "").strip()
+    if extra == "":
+        extra = None
+    if extra is not None and len(extra) > 255:
+        return jsonify({"ok": False, "message": "Слишком длинно (макс 255 символов)."}), 400
+
+    item.extra = extra
+    db.session.commit()
+    return jsonify({"ok": True, "extra": (item.extra or "")})
+
+@bp.post("/appointments/<int:appointment_id>/items/add-new-work")
+@admin_required
+def appointment_item_add_new_work(appointment_id):
+    appointment = db.session.get(Appointment, appointment_id)
+    if not appointment:
+        abort(404)
+
+    title_raw = request.form.get("new_work_title", "")
+    duration_raw = request.form.get("new_work_duration_min", "")
+    price_raw = request.form.get("new_work_base_price", "")
+    category_id = request.form.get("new_work_category_id", type=int)
+
+    title = normalize_work_title(title_raw)
+    if not title:
+        flash("Укажите название работы", "warning")
+        return redirect(url_for("admin.appointment_detail", appointment_id=appointment_id))
+
+    try:
+        duration_min = int(duration_raw)
+    except (TypeError, ValueError):
+        flash("Укажите длительность (минуты)", "warning")
+        return redirect(url_for("admin.appointment_detail", appointment_id=appointment_id))
+
+    if duration_min < 0:
+        flash("Длительность не может быть отрицательной", "warning")
+        return redirect(url_for("admin.appointment_detail", appointment_id=appointment_id))
+
+    base_price = None
+    if str(price_raw).strip() != "":
+        try:
+            base_price = int(price_raw)
+        except (TypeError, ValueError):
+            flash("Стоимость должна быть числом", "warning")
+            return redirect(url_for("admin.appointment_detail", appointment_id=appointment_id))
+        if base_price < 0:
+            flash("Стоимость не может быть отрицательной", "warning")
+            return redirect(url_for("admin.appointment_detail", appointment_id=appointment_id))
+
+    category = db.session.get(WorkCategory, category_id or 0)
+    if not category:
+        flash("Выберите категорию для новой работы", "warning")
+        return redirect(url_for("admin.appointment_detail", appointment_id=appointment_id))
+
+    key = work_title_key(title)
+    existing_rows = db.session.execute(
+        db.select(Work.id, Work.title).where(Work.category_id == category.id)
+    ).all()
+    existing_work_id = next((wid for wid, t in existing_rows if work_title_key(t) == key), None)
+
+    if existing_work_id:
+        work = db.session.get(Work, existing_work_id)
+    else:
+        next_sort = (
+            db.session.execute(
+                db.select(db.func.max(Work.sort_order)).where(Work.category_id == category.id)
+            ).scalar()
+            or 0
+        ) + 1
+        work = Work(
+            category_id=category.id,
+            title=title,
+            duration_min=duration_min,
+            base_price=base_price,
+            is_active=True,
+            sort_order=next_sort,
+        )
+        db.session.add(work)
+        try:
+            db.session.flush()
+        except IntegrityError:
+            db.session.rollback()
+            flash("Не удалось создать работу", "danger")
+            return redirect(url_for("admin.appointment_detail", appointment_id=appointment_id))
+
+    item = AppointmentItem(
+        appointment_id=appointment.id,
+        work_id=work.id,
+        price_snapshot=work.base_price,
+        duration_snapshot=work.duration_min,
+    )
+    db.session.add(item)
+    db.session.commit()
+    flash("Работа добавлена в выбранные услуги и сохранена в базе", "success")
     return redirect(url_for("admin.appointment_detail", appointment_id=appointment_id))
 
 @bp.post("/appointments/<int:appointment_id>/items/delete/<int:item_id>")
@@ -362,19 +1771,29 @@ def work_order_create(appointment_id):
         client_user_id=appointment.client_user_id,
         master_id=appointment.master_id,
         status="draft",
-        total_amount=sum(item.price_snapshot or 0 for item in appointment.items)
+        total_amount=0,
     )
     db.session.add(order)
     
     # Переносим услуги из заявки в заказ-наряд
     for item in appointment.items:
+        if bool(getattr(item, "declined_by_client", False)):
+            continue
+        k1 = float(item.k1 or 1.0)
+        k2 = float(item.k2 or 1.0)
+        duration = int(round((item.duration_snapshot or 0) * k1))
+        price = int(round((item.price_snapshot or 0) * k2))
         order_item = WorkOrderItem(
             work_order=order,
             title=item.work.title,
-            duration=item.duration_snapshot or 0,
-            price=item.price_snapshot or 0
+            duration=duration,
+            price=price,
+            comment=item.extra,
         )
         db.session.add(order_item)
+        if order.total_amount is None:
+            order.total_amount = 0
+        order.total_amount += price
         
     db.session.commit()
     flash("Заказ-наряд создан", "success")
@@ -390,17 +1809,93 @@ def work_order_detail(order_id):
     form = WorkOrderForm(obj=order)
     doc_form = DocumentUploadForm()
     item_form = WorkOrderItemForm()
+    detail_form = WorkOrderDetailForm()
+    material_form = WorkOrderMaterialForm()
     
     # Заполняем список мастеров для выбора исполнителя работы
     masters_list = db.session.execute(db.select(Master).where(Master.is_active == True).order_by(Master.name)).scalars().all()
     item_form.master_id.choices = [(0, "-- Основной мастер --")] + [(m.id, m.name) for m in masters_list]
     
-    part_form = WorkOrderPartForm()
-    
+    additional_work_form = WorkOrderAdditionalWorkForm()
+
+    def _inventory_catalog_groups():
+        """Каталог из истории запчастей + деталей; второй блок — не «шт» (как материалы)."""
+        rows_p = db.session.execute(
+            db.select(
+                WorkOrderPart.title,
+                WorkOrderPart.unit,
+                WorkOrderPart.price,
+                db.func.count(WorkOrderPart.id),
+            )
+            .group_by(WorkOrderPart.title, WorkOrderPart.unit, WorkOrderPart.price)
+        ).all()
+        rows_d = db.session.execute(
+            db.select(
+                WorkOrderDetail.title,
+                WorkOrderDetail.unit,
+                WorkOrderDetail.price,
+                db.func.count(WorkOrderDetail.id),
+            )
+            .group_by(WorkOrderDetail.title, WorkOrderDetail.unit, WorkOrderDetail.price)
+        ).all()
+
+        buckets: dict[tuple[str, str, int], dict] = {}
+        for title, unit, price, cnt in rows_p + rows_d:
+            t = (title or "").strip()
+            u = (unit or "шт.").strip()
+            p = int(price or 0)
+            c = int(cnt or 0)
+            if not t:
+                continue
+            key = (t.casefold(), u.casefold(), p)
+            if key not in buckets:
+                buckets[key] = {"title": t, "unit": u, "price": p, "count": 0}
+            buckets[key]["count"] += c
+        normalized = list(buckets.values())
+
+        def is_piece_unit(u: str) -> bool:
+            v = (u or "").strip().lower()
+            return v in {"шт", "шт.", "pcs"}
+
+        details_lines = [x for x in normalized if is_piece_unit(x["unit"])]
+        materials_lines = [x for x in normalized if not is_piece_unit(x["unit"])]
+
+        def build_groups(items):
+            by_key = {}
+            for x in items:
+                key = (x["title"].strip().casefold(), x["unit"].strip().casefold())
+                prev = by_key.get(key)
+                if not prev or x["count"] > prev["count"]:
+                    by_key[key] = x
+
+            uniq = list(by_key.values())
+            uniq.sort(key=lambda x: (-x["count"], x["title"].casefold()))
+
+            groups = {"ПОПУЛЯРНЫЕ": uniq[:30]}
+            for x in uniq:
+                ch = x["title"][:1].upper() if x["title"] else "#"
+                if ch.isdigit():
+                    ch = "#"
+                groups.setdefault(ch, []).append(x)
+            return groups
+
+        return build_groups(details_lines), build_groups(materials_lines)
+
+    detail_catalog_groups, materials_catalog_groups = _inventory_catalog_groups()
+
+    merged_inventory_rows = merged_work_order_inventory_rows(order)
+    selected_materials_list = list(order.materials or [])
+
+    # Всегда пересчитываем итог при открытии, чтобы значение в БД не было устаревшим
+    recalculate_work_order_total(order)
+    db.session.commit()
+
     if form.validate_on_submit():
         order.status = form.status.data
-        order.total_amount = form.total_amount.data
         order.inspection_results = form.inspection_results.data
+        
+        recalculate_work_order_total(order)
+
         if order.status == "closed":
             order.closed_at = datetime.utcnow()
             order.is_paid = True # Автоматически считаем оплаченным при закрытии
@@ -425,12 +1920,19 @@ def work_order_detail(order_id):
         return redirect(url_for("admin.work_order_detail", order_id=order.id))
         
     return render_template(
-        "admin/work_orders/detail.html", 
-        order=order, 
-        form=form, 
+        "admin/work_orders/detail.html",
+        order=order,
+        form=form,
         doc_form=doc_form,
         item_form=item_form,
-        part_form=part_form
+        additional_work_form=additional_work_form,
+        detail_form=detail_form,
+        material_form=material_form,
+        detail_catalog_groups=detail_catalog_groups,
+        materials_catalog_groups=materials_catalog_groups,
+        merged_inventory_rows=merged_inventory_rows,
+        selected_materials_list=selected_materials_list,
+        complaints=order.complaints or [],
     )
 
 @bp.post("/work-orders/<int:order_id>/pay")
@@ -470,9 +1972,16 @@ def work_order_print(order_id):
     order = db.session.get(WorkOrder, order_id)
     if not order:
         abort(404)
-        
+
+    merged_inventory_rows = merged_work_order_inventory_rows(order)
     settings = OrganizationSettings.get_settings()
-    return render_template("admin/work_orders/print.html", order=order, settings=settings)
+    return render_template(
+        "admin/work_orders/print.html",
+        order=order,
+        settings=settings,
+        merged_inventory_rows=merged_inventory_rows,
+        selected_materials_list=list(order.materials or []),
+    )
 
 @bp.post("/work-orders/<int:order_id>/items/add")
 @admin_required
@@ -571,28 +2080,446 @@ def work_order_part_add(order_id):
     order = db.session.get(WorkOrder, order_id)
     if not order:
         abort(404)
-    
-    form = WorkOrderPartForm()
+
+    form = WorkOrderDetailForm()
     if form.validate_on_submit():
-        part = WorkOrderPart(
+        detail = WorkOrderDetail(
+            work_order=order,
+            title=form.title.data,
+            quantity=form.quantity.data,
+            unit=form.unit.data,
+            price=form.price.data,
+        )
+        db.session.add(detail)
+        recalculate_work_order_total(order)
+        db.session.commit()
+        flash("Позиция добавлена в детали", "success")
+
+    return redirect(url_for("admin.work_order_detail", order_id=order.id))
+
+
+@bp.post("/work-orders/<int:order_id>/parts/add-json")
+@admin_required
+def work_order_part_add_json(order_id):
+    order = db.session.get(WorkOrder, order_id)
+    if not order:
+        return jsonify({"ok": False, "message": "Заказ-наряд не найден."}), 404
+
+    payload = request.get_json(silent=True) or {}
+    title = normalize_work_title(payload.get("title", ""))
+    unit = (payload.get("unit") or "шт.").strip()
+    price_raw = payload.get("price")
+    qty_raw = payload.get("quantity")
+
+    if not title:
+        return jsonify({"ok": False, "message": "Укажите наименование."}), 400
+
+    try:
+        quantity = float(qty_raw)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "Количество должно быть числом."}), 400
+    if quantity <= 0:
+        return jsonify({"ok": False, "message": "Количество должно быть больше нуля."}), 400
+
+    try:
+        price = int(price_raw)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "Цена должна быть числом."}), 400
+    if price < 0:
+        return jsonify({"ok": False, "message": "Цена не может быть отрицательной."}), 400
+
+    existing, ek = _find_duplicate_inventory_line(order, title, unit)
+    if existing:
+        if ek == "detail":
+            return jsonify({"ok": True, "already": True, "detail_id": int(existing.id)}), 200
+        return jsonify({"ok": True, "already": True, "part_id": int(existing.id)}), 200
+
+    detail = WorkOrderDetail(work_order=order, title=title, quantity=quantity, unit=unit, price=price)
+    db.session.add(detail)
+    order_total = recalculate_work_order_total(order)
+
+    db.session.commit()
+    return jsonify(
+        {
+            "ok": True,
+            "already": False,
+            "detail_id": int(detail.id),
+            "part_id": int(detail.id),
+            "title": detail.title,
+            "quantity": float(detail.quantity or 0),
+            "unit": detail.unit or "",
+            "price": int(detail.price or 0),
+            "total": int((detail.price or 0) * (detail.quantity or 0)),
+            "order_total": order_total,
+        }
+    )
+
+
+@bp.post("/work-orders/<int:order_id>/parts/update-json/<int:part_id>")
+@admin_required
+def work_order_part_update_json(order_id, part_id):
+    part = db.session.get(WorkOrderPart, part_id)
+    if not part or part.work_order_id != order_id:
+        return jsonify({"ok": False, "message": "Запчасть не найдена."}), 404
+
+    payload = request.get_json(silent=True) or {}
+    title = normalize_work_title(payload.get("title", ""))
+    unit = (payload.get("unit") or "шт.").strip()
+    price_raw = payload.get("price")
+    qty_raw = payload.get("quantity")
+
+    if not title:
+        return jsonify({"ok": False, "message": "Укажите наименование."}), 400
+
+    try:
+        quantity = float(qty_raw)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "Количество должно быть числом."}), 400
+    if quantity <= 0:
+        return jsonify({"ok": False, "message": "Количество должно быть больше нуля."}), 400
+
+    try:
+        price = int(price_raw)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "Цена должна быть числом."}), 400
+    if price < 0:
+        return jsonify({"ok": False, "message": "Цена не может быть отрицательной."}), 400
+
+    part.title = title
+    part.quantity = quantity
+    part.unit = unit
+    part.price = price
+
+    order_total = recalculate_work_order_total(part.work_order)
+
+    db.session.commit()
+    return jsonify(
+        {
+            "ok": True,
+            "part_id": int(part.id),
+            "title": part.title,
+            "quantity": float(part.quantity or 0),
+            "unit": part.unit or "",
+            "price": int(part.price or 0),
+            "total": int((part.price or 0) * (part.quantity or 0)),
+            "order_total": order_total,
+        }
+    )
+
+
+@bp.post("/work-orders/<int:order_id>/details/add")
+@admin_required
+def work_order_detail_add(order_id):
+    order = db.session.get(WorkOrder, order_id)
+    if not order:
+        abort(404)
+    
+    form = WorkOrderDetailForm()
+    if form.validate_on_submit():
+        detail = WorkOrderDetail(
             work_order=order,
             title=form.title.data,
             quantity=form.quantity.data,
             unit=form.unit.data,
             price=form.price.data
         )
-        db.session.add(part)
+        db.session.add(detail)
         
         # Автоматический пересчет суммы
-        total_part_price = int(part.price * part.quantity)
+        total_detail_price = int(detail.price * detail.quantity)
         if order.total_amount is None:
             order.total_amount = 0
-        order.total_amount += total_part_price
+        order.total_amount += total_detail_price
         
         db.session.commit()
-        flash("Запчасть добавлена", "success")
+        flash("Деталь добавлена", "success")
     
     return redirect(url_for("admin.work_order_detail", order_id=order.id))
+
+
+@bp.post("/work-orders/<int:order_id>/details/add-json")
+@admin_required
+def work_order_detail_add_json(order_id):
+    order = db.session.get(WorkOrder, order_id)
+    if not order:
+        return jsonify({"ok": False, "message": "Заказ-наряд не найден."}), 404
+
+    payload = request.get_json(silent=True) or {}
+    title = normalize_work_title(payload.get("title", ""))
+    unit = (payload.get("unit") or "шт.").strip()
+    price_raw = payload.get("price")
+    qty_raw = payload.get("quantity")
+
+    if not title:
+        return jsonify({"ok": False, "message": "Укажите наименование."}), 400
+
+    try:
+        quantity = float(qty_raw)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "Количество должно быть числом."}), 400
+    if quantity <= 0:
+        return jsonify({"ok": False, "message": "Количество должно быть больше нуля."}), 400
+
+    try:
+        price = int(price_raw)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "Цена должна быть числом."}), 400
+    if price < 0:
+        return jsonify({"ok": False, "message": "Цена не может быть отрицательной."}), 400
+
+    existing, ek = _find_duplicate_inventory_line(order, title, unit)
+    if existing:
+        if ek == "detail":
+            return jsonify({"ok": True, "already": True, "detail_id": int(existing.id)}), 200
+        return jsonify({"ok": True, "already": True, "part_id": int(existing.id)}), 200
+
+    detail = WorkOrderDetail(work_order=order, title=title, quantity=quantity, unit=unit, price=price)
+    db.session.add(detail)
+
+    order_total = recalculate_work_order_total(order)
+
+    db.session.commit()
+    return jsonify(
+        {
+            "ok": True,
+            "already": False,
+            "detail_id": int(detail.id),
+            "title": detail.title,
+            "quantity": float(detail.quantity or 0),
+            "unit": detail.unit or "",
+            "price": int(detail.price or 0),
+            "total": int((detail.price or 0) * (detail.quantity or 0)),
+            "order_total": order_total,
+        }
+    )
+
+
+@bp.post("/work-orders/<int:order_id>/details/update-json/<int:detail_id>")
+@admin_required
+def work_order_detail_update_json(order_id, detail_id):
+    detail = db.session.get(WorkOrderDetail, detail_id)
+    if not detail or detail.work_order_id != order_id:
+        return jsonify({"ok": False, "message": "Деталь не найдена."}), 404
+
+    payload = request.get_json(silent=True) or {}
+    title = normalize_work_title(payload.get("title", ""))
+    unit = (payload.get("unit") or "шт.").strip()
+    price_raw = payload.get("price")
+    qty_raw = payload.get("quantity")
+
+    if not title:
+        return jsonify({"ok": False, "message": "Укажите наименование."}), 400
+
+    try:
+        quantity = float(qty_raw)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "Количество должно быть числом."}), 400
+    if quantity <= 0:
+        return jsonify({"ok": False, "message": "Количество должно быть больше нуля."}), 400
+
+    try:
+        price = int(price_raw)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "Цена должна быть числом."}), 400
+    if price < 0:
+        return jsonify({"ok": False, "message": "Цена не может быть отрицательной."}), 400
+
+    detail.title = title
+    detail.quantity = quantity
+    detail.unit = unit
+    detail.price = price
+
+    order_total = recalculate_work_order_total(detail.work_order)
+
+    db.session.commit()
+    return jsonify(
+        {
+            "ok": True,
+            "detail_id": int(detail.id),
+            "title": detail.title,
+            "quantity": float(detail.quantity or 0),
+            "unit": detail.unit or "",
+            "price": int(detail.price or 0),
+            "total": int((detail.price or 0) * (detail.quantity or 0)),
+            "order_total": order_total,
+        }
+    )
+
+
+@bp.post("/work-orders/<int:order_id>/materials/update-json/<int:material_id>")
+@admin_required
+def work_order_material_update_json(order_id, material_id):
+    material = db.session.get(WorkOrderMaterial, material_id)
+    if not material or material.work_order_id != order_id:
+        return jsonify({"ok": False, "message": "Материал не найден."}), 404
+
+    payload = request.get_json(silent=True) or {}
+    title = normalize_work_title(payload.get("title", ""))
+    unit = (payload.get("unit") or "шт.").strip()
+    price_raw = payload.get("price")
+    qty_raw = payload.get("quantity")
+
+    if not title:
+        return jsonify({"ok": False, "message": "Укажите наименование."}), 400
+
+    try:
+        quantity = float(qty_raw)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "Количество должно быть числом."}), 400
+    if quantity <= 0:
+        return jsonify({"ok": False, "message": "Количество должно быть больше нуля."}), 400
+
+    try:
+        price = int(price_raw)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "Цена должна быть числом."}), 400
+    if price < 0:
+        return jsonify({"ok": False, "message": "Цена не может быть отрицательной."}), 400
+
+    material.title = title
+    material.quantity = quantity
+    material.unit = unit
+    material.price = price
+
+    order_total = recalculate_work_order_total(material.work_order)
+
+    db.session.commit()
+    return jsonify(
+        {
+            "ok": True,
+            "material_id": int(material.id),
+            "title": material.title,
+            "quantity": float(material.quantity or 0),
+            "unit": material.unit or "",
+            "price": int(material.price or 0),
+            "total": int((material.price or 0) * (material.quantity or 0)),
+            "order_total": order_total,
+        }
+    )
+
+
+@bp.post("/work-orders/<int:order_id>/materials/add")
+@admin_required
+def work_order_material_add(order_id):
+    order = db.session.get(WorkOrder, order_id)
+    if not order:
+        abort(404)
+    
+    form = WorkOrderMaterialForm()
+    if form.validate_on_submit():
+        material = WorkOrderMaterial(
+            work_order=order,
+            title=form.title.data,
+            quantity=form.quantity.data,
+            unit=form.unit.data,
+            price=form.price.data
+        )
+        db.session.add(material)
+        
+        # Автоматический пересчет суммы
+        total_material_price = int(material.price * material.quantity)
+        if order.total_amount is None:
+            order.total_amount = 0
+        order.total_amount += total_material_price
+        
+        db.session.commit()
+        flash("Материал добавлен", "success")
+    
+    return redirect(url_for("admin.work_order_detail", order_id=order.id))
+
+
+@bp.post("/work-orders/<int:order_id>/parts/update/<int:part_id>")
+@admin_required
+def work_order_part_update(order_id, part_id):
+    part = db.session.get(WorkOrderPart, part_id)
+    if part and part.work_order_id == order_id:
+        form_keys = {k for k in request.form if k != "csrf_token"}
+        if not form_keys.intersection({"title", "quantity", "unit", "price"}):
+            flash("Укажите поля для сохранения (форма была пустой).", "warning")
+        else:
+            title = request.form.get("title", "").strip()
+            quantity = request.form.get("quantity", type=float, default=1.0)
+            unit = request.form.get("unit", "").strip()
+            price = request.form.get("price", type=int, default=0)
+
+            if title:
+                part.title = title
+            part.quantity = quantity
+            part.unit = unit
+            part.price = price
+
+            recalculate_work_order_total(part.work_order)
+
+            db.session.commit()
+            flash("Запчасть обновлена", "success")
+
+    return redirect(url_for("admin.work_order_detail", order_id=order_id))
+
+
+@bp.post("/work-orders/<int:order_id>/materials/add-json")
+@admin_required
+def work_order_material_add_json(order_id):
+    order = db.session.get(WorkOrder, order_id)
+    if not order:
+        return jsonify({"ok": False, "message": "Заказ-наряд не найден."}), 404
+
+    payload = request.get_json(silent=True) or {}
+    title = normalize_work_title(payload.get("title", ""))
+    unit = (payload.get("unit") or "шт.").strip()
+    price_raw = payload.get("price")
+    qty_raw = payload.get("quantity")
+
+    if not title:
+        return jsonify({"ok": False, "message": "Укажите наименование."}), 400
+
+    try:
+        quantity = float(qty_raw)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "Количество должно быть числом."}), 400
+    if quantity <= 0:
+        return jsonify({"ok": False, "message": "Количество должно быть больше нуля."}), 400
+
+    try:
+        price = int(price_raw)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "Цена должна быть числом."}), 400
+    if price < 0:
+        return jsonify({"ok": False, "message": "Цена не может быть отрицательной."}), 400
+
+    key = (work_title_key(title), work_title_key(unit))
+    existing_material = None
+    for material in order.materials:
+        material_key = (work_title_key(material.title or ""), work_title_key(material.unit or ""))
+        if material_key == key:
+            existing_material = material
+            break
+
+    if existing_material:
+        return jsonify({"ok": True, "already": True, "material_id": int(existing_material.id)}), 200
+
+    material = WorkOrderMaterial(work_order=order, title=title, quantity=quantity, unit=unit, price=price)
+    db.session.add(material)
+
+    total_material_price = int(price * quantity)
+    if order.total_amount is None:
+        order.total_amount = 0
+    order.total_amount += total_material_price
+
+    db.session.commit()
+    return jsonify(
+        {
+            "ok": True,
+            "already": False,
+            "material_id": int(material.id),
+            "title": material.title,
+            "quantity": float(material.quantity or 0),
+            "unit": material.unit or "",
+            "price": int(material.price or 0),
+            "total": int((material.price or 0) * (material.quantity or 0)),
+            "order_total": int(order.total_amount or 0),
+        }
+    )
+
 
 @bp.post("/work-orders/<int:order_id>/parts/delete/<int:part_id>")
 @admin_required
@@ -609,6 +2536,225 @@ def work_order_part_delete(order_id, part_id):
         flash("Запчасть удалена", "success")
         
     return redirect(url_for("admin.work_order_detail", order_id=order_id))
+
+
+@bp.post("/work-orders/<int:order_id>/details/delete/<int:detail_id>")
+@admin_required
+def work_order_detail_delete(order_id, detail_id):
+    detail = db.session.get(WorkOrderDetail, detail_id)
+    if detail and detail.work_order_id == order_id:
+        order = detail.work_order
+        total_detail_price = int(detail.price * detail.quantity)
+        if order.total_amount is not None:
+            order.total_amount -= total_detail_price
+            
+        db.session.delete(detail)
+        db.session.commit()
+        flash("Деталь удалена", "success")
+        
+    return redirect(url_for("admin.work_order_detail", order_id=order_id))
+
+
+@bp.post("/work-orders/<int:order_id>/materials/delete/<int:material_id>")
+@admin_required
+def work_order_material_delete(order_id, material_id):
+    material = db.session.get(WorkOrderMaterial, material_id)
+    if material and material.work_order_id == order_id:
+        order = material.work_order
+        total_material_price = int(material.price * material.quantity)
+        if order.total_amount is not None:
+            order.total_amount -= total_material_price
+            
+        db.session.delete(material)
+        db.session.commit()
+        flash("Материал удалена", "success")
+        
+    return redirect(url_for("admin.work_order_detail", order_id=order_id))
+
+
+@bp.post("/work-orders/<int:order_id>/details/update/<int:detail_id>")
+@admin_required
+def work_order_detail_update(order_id, detail_id):
+    detail = db.session.get(WorkOrderDetail, detail_id)
+    if detail and detail.work_order_id == order_id:
+        form_keys = {k for k in request.form if k != "csrf_token"}
+        if not form_keys.intersection({"title", "quantity", "unit", "price"}):
+            flash("Укажите поля для сохранения (форма была пустой).", "warning")
+        else:
+            title = request.form.get("title", "").strip()
+            quantity = request.form.get("quantity", type=float, default=1.0)
+            unit = request.form.get("unit", "").strip()
+            price = request.form.get("price", type=int, default=0)
+
+            if title:
+                detail.title = title
+            detail.quantity = quantity
+            detail.unit = unit
+            detail.price = price
+
+            recalculate_work_order_total(detail.work_order)
+
+            db.session.commit()
+            flash("Деталь обновлена", "success")
+
+    return redirect(url_for("admin.work_order_detail", order_id=order_id))
+
+
+@bp.post("/work-orders/<int:order_id>/materials/update/<int:material_id>")
+@admin_required
+def work_order_material_update(order_id, material_id):
+    material = db.session.get(WorkOrderMaterial, material_id)
+    if material and material.work_order_id == order_id:
+        form_keys = {k for k in request.form if k != "csrf_token"}
+        if not form_keys.intersection({"title", "quantity", "unit", "price"}):
+            flash("Укажите поля для сохранения (форма была пустой).", "warning")
+        else:
+            title = request.form.get("title", "").strip()
+            quantity = request.form.get("quantity", type=float, default=1.0)
+            unit = request.form.get("unit", "").strip()
+            price = request.form.get("price", type=int, default=0)
+
+            if title:
+                material.title = title
+            material.quantity = quantity
+            material.unit = unit
+            material.price = price
+
+            recalculate_work_order_total(material.work_order)
+
+            db.session.commit()
+            flash("Материал обновлен", "success")
+
+    return redirect(url_for("admin.work_order_detail", order_id=order_id))
+
+
+@bp.post("/work-orders/<int:order_id>/additional-works/add")
+@admin_required
+def work_order_additional_work_add(order_id):
+    order = db.session.get(WorkOrder, order_id)
+    if not order:
+        abort(404)
+    form = WorkOrderAdditionalWorkForm()
+    if form.validate_on_submit():
+        row = WorkOrderAdditionalWork(
+            work_order=order,
+            title=normalize_work_title(form.title.data or ""),
+            price=int(form.price.data or 0),
+            comment=(form.comment.data or "").strip() or None,
+        )
+        db.session.add(row)
+        recalculate_work_order_total(order)
+        db.session.commit()
+        flash("Дополнительная работа добавлена", "success")
+    return redirect(url_for("admin.work_order_detail", order_id=order.id))
+
+
+@bp.post("/work-orders/<int:order_id>/additional-works/add-json")
+@admin_required
+def work_order_additional_work_add_json(order_id):
+    order = db.session.get(WorkOrder, order_id)
+    if not order:
+        return jsonify({"ok": False, "message": "Заказ-наряд не найден."}), 404
+    payload = request.get_json(silent=True) or {}
+    title = normalize_work_title(payload.get("title", ""))
+    if not title:
+        return jsonify({"ok": False, "message": "Укажите наименование."}), 400
+    try:
+        price = int(payload.get("price"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "Сумма должна быть числом."}), 400
+    if price < 0:
+        return jsonify({"ok": False, "message": "Сумма не может быть отрицательной."}), 400
+    comment = (payload.get("comment") or "").strip() or None
+    row = WorkOrderAdditionalWork(work_order=order, title=title, price=price, comment=comment)
+    db.session.add(row)
+    order_total = recalculate_work_order_total(order)
+    db.session.commit()
+    return jsonify(
+        {
+            "ok": True,
+            "additional_work_id": int(row.id),
+            "title": row.title,
+            "price": int(row.price or 0),
+            "comment": row.comment or "",
+            "order_total": order_total,
+        }
+    )
+
+
+@bp.post("/work-orders/<int:order_id>/additional-works/update-json/<int:row_id>")
+@admin_required
+def work_order_additional_work_update_json(order_id, row_id):
+    row = db.session.get(WorkOrderAdditionalWork, row_id)
+    if not row or row.work_order_id != order_id:
+        return jsonify({"ok": False, "message": "Строка не найдена."}), 404
+    payload = request.get_json(silent=True) or {}
+    title = normalize_work_title(payload.get("title", ""))
+    if not title:
+        return jsonify({"ok": False, "message": "Укажите наименование."}), 400
+    try:
+        price = int(payload.get("price"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "Сумма должна быть числом."}), 400
+    if price < 0:
+        return jsonify({"ok": False, "message": "Сумма не может быть отрицательной."}), 400
+    row.title = title
+    row.price = price
+    row.comment = (payload.get("comment") or "").strip() or None
+    order_total = recalculate_work_order_total(row.work_order)
+    db.session.commit()
+    return jsonify(
+        {
+            "ok": True,
+            "additional_work_id": int(row.id),
+            "title": row.title,
+            "price": int(row.price or 0),
+            "comment": row.comment or "",
+            "order_total": order_total,
+        }
+    )
+
+
+@bp.post("/work-orders/<int:order_id>/additional-works/delete/<int:row_id>")
+@admin_required
+def work_order_additional_work_delete(order_id, row_id):
+    row = db.session.get(WorkOrderAdditionalWork, row_id)
+    if row and row.work_order_id == order_id:
+        order = row.work_order
+        db.session.delete(row)
+        recalculate_work_order_total(order)
+        db.session.commit()
+        flash("Строка удалена", "success")
+    return redirect(url_for("admin.work_order_detail", order_id=order_id))
+
+
+@bp.post("/work-orders/<int:order_id>/complaints/done/<int:complaint_id>")
+@admin_required
+def work_order_complaint_done(order_id, complaint_id):
+    complaint = db.session.get(WorkOrderComplaintItem, complaint_id)
+    if complaint and complaint.work_order_id == order_id:
+        complaint.is_done = True
+        complaint.is_refused = False
+        complaint.refusal_reason = None
+        db.session.commit()
+        flash("Жалоба отмечена как выполненная", "success")
+    return redirect(url_for("admin.work_order_detail", order_id=order_id))
+
+
+@bp.post("/work-orders/<int:order_id>/complaints/refuse/<int:complaint_id>")
+@admin_required
+def work_order_complaint_refuse(order_id, complaint_id):
+    complaint = db.session.get(WorkOrderComplaintItem, complaint_id)
+    if complaint and complaint.work_order_id == order_id:
+        complaint.is_refused = True
+        complaint.is_done = False
+        # Получаем причину отказа из формы
+        refusal_reason = request.form.get("refusal_reason", "").strip()
+        complaint.refusal_reason = refusal_reason
+        db.session.commit()
+        flash("Жалоба отмечена как отклоненная", "success")
+    return redirect(url_for("admin.work_order_detail", order_id=order_id))
+
 
 @bp.post("/work-orders/<int:order_id>/upload")
 @admin_required
@@ -734,6 +2880,58 @@ def settings():
         return redirect(url_for("admin.settings"))
 
     return render_template("admin/settings.html", settings_form=settings_form, credentials_form=credentials_form)
+
+
+@bp.route("/contact", methods=["GET", "POST"])
+@admin_required
+def contact():
+    settings_obj = OrganizationSettings.get_settings()
+    form = ContactSettingsForm(obj=settings_obj)
+    if request.method == "GET":
+        form.smtp_password.data = ""
+
+    if form.validate_on_submit():
+        old_smtp_pw = settings_obj.smtp_password
+        form.populate_obj(settings_obj)
+        pwd = (form.smtp_password.data or "").strip()
+        if not pwd:
+            settings_obj.smtp_password = old_smtp_pw
+        db.session.commit()
+        flash("Параметры связи сохранены", "success")
+        return redirect(url_for("admin.contact"))
+
+    return render_template("admin/contact.html", form=form)
+
+
+@bp.post("/contact/test-email")
+@admin_required
+def contact_test_email():
+    settings_obj = OrganizationSettings.get_settings()
+    to = (settings_obj.email or "").strip()
+    if not to:
+        flash("Укажите «Email для связи», сохраните настройки, затем повторите тест.", "danger")
+        return redirect(url_for("admin.contact"))
+    if not (settings_obj.smtp_host or "").strip():
+        flash("Укажите SMTP сервер и сохраните настройки.", "danger")
+        return redirect(url_for("admin.contact"))
+    try:
+        send_organization_email(
+            [to],
+            f"Тест SMTP — {settings_obj.name or 'Сервис'}",
+            "Это тестовое письмо из раздела «Связь». Если вы его получили, SMTP настроен верно.",
+            settings=settings_obj,
+        )
+        flash(f"Тестовое письмо отправлено на {to}", "success")
+    except MailConfigurationError as e:
+        flash(str(e), "danger")
+    except smtplib.SMTPException as e:
+        flash(f"Ошибка SMTP: {e}", "danger")
+    except OSError as e:
+        flash(f"Сеть / соединение: {e}", "danger")
+    except Exception as e:
+        flash(f"Не удалось отправить: {e}", "danger")
+    return redirect(url_for("admin.contact"))
+
 
 @bp.get("/materials-report")
 @admin_required

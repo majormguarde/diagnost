@@ -5,158 +5,286 @@
 {% set seo_canonical = url_for('cabinet.index', _external=True) %}
 
 {% block content %}
-<div class="container py-5">
-    <div class="row">
-        <!-- Sidebar Navigation -->
-        <div class="col-lg-3 mb-4">
-            <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
-                <div class="bg-primary p-4 text-white text-center">
-                    <div class="icon-box mx-auto mb-3 bg-white text-primary">
-                        <i class="bi bi-person-circle fs-3"></i>
-                    </div>
-                    <h5 class="mb-0">{{ current_user.username }}</h5>
-                    <p class="small mb-0 opacity-75">Клиент сервиса</p>
-                </div>
-                <div class="list-group list-group-flush">
-                    <a href="{{ url_for('cabinet.index') }}" class="list-group-item list-group-item-action border-0 py-3 px-4 active">
-                        <i class="bi bi-calendar-check me-2"></i>Мои заявки
-                    </a>
-                    <a href="{{ url_for('cabinet.telegram') }}" class="list-group-item list-group-item-action border-0 py-3 px-4">
-                        <i class="bi bi-telegram me-2"></i>Telegram-бот
-                    </a>
-                    <div class="border-top"></div>
-                    <a href="{{ url_for('auth.logout') }}" class="list-group-item list-group-item-action border-0 py-3 px-4 text-danger">
-                        <i class="bi bi-box-arrow-right me-2"></i>Выйти
-                    </a>
-                </div>
-            </div>
-        </div>
+{% set appt_status_names = {
+  'new': 'Новая',
+  'negotiation': 'Согласование',
+  'confirmed': 'Подтверждена',
+  'in_progress': 'В работе',
+  'done': 'Выполнена',
+  'cancelled_by_admin': 'Отменена администратором',
+  'cancelled_by_client': 'Отменена клиентом'
+} %}
+{% set appt_status_classes = {
+  'new': 'primary',
+  'negotiation': 'primary',
+  'confirmed': 'success',
+  'in_progress': 'warning',
+  'done': 'info',
+  'cancelled_by_admin': 'danger',
+  'cancelled_by_client': 'secondary'
+} %}
+{% set order_status_names = {
+  'new': 'Новый',
+  'draft': 'Черновик',
+  'opened': 'Открыт',
+  'closed': 'Закрыт',
+  'cancelled': 'Отменен'
+} %}
+{% set order_status_classes = {
+  'new': 'primary',
+  'draft': 'secondary',
+  'opened': 'info',
+  'closed': 'success',
+  'cancelled': 'danger'
+} %}
 
-        <!-- Main Content -->
-        <div class="col-lg-9">
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h2 class="mb-0 fw-bold">Личный кабинет</h2>
-                <a href="{{ url_for('booking.step1') }}" class="btn btn-primary rounded-pill px-4 shadow-sm">
-                    <i class="bi bi-plus-lg me-1"></i>Новая заявка
-                </a>
-            </div>
-            
-            <!-- Appointments Section -->
-            <div class="card border-0 shadow-sm rounded-4 mb-5 overflow-hidden">
-                <div class="card-header bg-white py-3 px-4 border-bottom-0">
-                    <h5 class="mb-0 fw-bold text-dark"><i class="bi bi-clock-history me-2 text-primary"></i>История заявок</h5>
-                </div>
-                <div class="card-body p-0">
-                    {% if not appointments %}
-                        <div class="p-5 text-center text-muted">
-                            <i class="bi bi-calendar-x fs-1 mb-3 d-block opacity-25"></i>
-                            <p>У вас пока нет активных заявок.</p>
-                            <a href="{{ url_for('booking.step1') }}" class="btn btn-outline-primary btn-sm rounded-pill px-4">Подать заявку сейчас</a>
-                        </div>
-                    {% else %}
-                        <div class="table-responsive">
-                            <table class="table table-hover align-middle mb-0">
-                                <thead class="bg-light text-muted small text-uppercase">
-                                    <tr>
-                                        <th class="px-4 py-3">Дата и время</th>
-                                        <th class="py-3">Мастер</th>
-                                        <th class="py-3">Статус</th>
-                                        <th class="px-4 py-3 text-end">Действие</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for appt in appointments %}
-                                    <tr>
-                                        <td class="px-4 py-3 fw-bold">{{ appt.start_at.strftime('%d.%m.%Y %H:%M') }}</td>
-                                        <td class="py-3">{{ appt.master.name }}</td>
-                                        <td class="py-3">
-                                            {% set status_colors = {
-                                                'new': 'primary',
-                                                'confirmed': 'success',
-                                                'in_progress': 'warning',
-                                                'done': 'info',
-                                                'cancelled_by_admin': 'danger',
-                                                'cancelled_by_client': 'secondary'
-                                            } %}
-                                            {% set status_names = {
-                                                'new': 'Новая',
-                                                'confirmed': 'Подтверждена',
-                                                'in_progress': 'В работе',
-                                                'done': 'Выполнена',
-                                                'cancelled_by_admin': 'Отменена',
-                                                'cancelled_by_client': 'Отменена'
-                                            } %}
-                                            <span class="badge rounded-pill bg-{{ status_colors[appt.status] }} px-3">
-                                                {{ status_names[appt.status] }}
-                                            </span>
-                                        </td>
-                                        <td class="px-4 py-3 text-end">
-                                            <a href="{{ url_for('cabinet.appointment_detail', appointment_id=appt.id) }}" class="btn btn-sm btn-light rounded-pill px-3">
-                                                Подробнее <i class="bi bi-chevron-right ms-1"></i>
-                                            </a>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    {% endif %}
-                </div>
-            </div>
-
-            <!-- Work Orders Section -->
-            <div class="mb-4">
-                <h5 class="mb-4 fw-bold text-dark"><i class="bi bi-file-earmark-text me-2 text-primary"></i>Заказ-наряды и документы</h5>
-                {% if not orders %}
-                    <div class="card border-0 shadow-sm rounded-4 p-5 text-center text-muted">
-                        <i class="bi bi-folder2-open fs-1 mb-3 d-block opacity-25"></i>
-                        <p>Здесь будут отображаться ваши документы после визита в сервис.</p>
-                    </div>
-                {% else %}
-                    <div class="row g-4">
-                        {% for order in orders %}
-                        <div class="col-md-6">
-                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
-                                <div class="card-body p-4">
-                                    <div class="d-flex justify-content-between align-items-start mb-3">
-                                        <div>
-                                            <h5 class="mb-1 fw-bold">Заказ №{{ order.id }}</h5>
-                                            <p class="small text-muted mb-0"><i class="bi bi-calendar3 me-1"></i>{{ order.created_at.strftime('%d.%m.%Y') }}</p>
-                                        </div>
-                                        <span class="badge bg-{{ 'success' if order.status == 'closed' else 'primary' }} rounded-pill px-3">
-                                            {{ {'draft':'Черновик','opened':'Открыт','closed':'Закрыт','cancelled':'Отменен'}[order.status] }}
-                                        </span>
-                                    </div>
-                                    
-                                    <div class="bg-light rounded-3 p-3 mb-3">
-                                        <h6 class="small fw-bold text-uppercase text-muted mb-2">Документы для скачивания:</h6>
-                                        {% if order.documents %}
-                                            <div class="list-group list-group-flush bg-transparent">
-                                                {% for doc in order.documents %}
-                                                <a href="{{ url_for('cabinet.download_document', doc_id=doc.id) }}" class="list-group-item list-group-item-action bg-transparent px-0 py-2 border-0 d-flex align-items-center text-primary">
-                                                    <i class="bi bi-file-earmark-pdf-fill fs-5 me-2"></i>
-                                                    <span class="small">{{ doc.filename }}</span>
-                                                    <i class="bi bi-download ms-auto small"></i>
-                                                </a>
-                                                {% endfor %}
-                                            </div>
-                                        {% else %}
-                                            <p class="small text-muted italic mb-0">Файлы еще подготавливаются...</p>
-                                        {% endif %}
-                                    </div>
-
-                                    <div class="d-flex justify-content-between align-items-center mt-auto pt-2">
-                                        <span class="text-muted small">Итого к оплате:</span>
-                                        <span class="fw-bold fs-5 text-primary">{{ "{:,.0f}".format(order.total_amount or 0).replace(',', ' ') }} ₽</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                {% endif %}
-            </div>
-        </div>
+<div class="container-fluid py-4">
+  <div class="row g-4">
+    <div class="col-xl-3 col-lg-4">
+      {% include "cabinet/_sidebar.html" %}
     </div>
+
+    <div class="col-xl-9 col-lg-8">
+      <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+        <div>
+          <span class="badge neon-border-blue text-white mono mb-2">CLIENT_CABINET.EXE</span>
+          <h1 class="h2 m-0 neon-text-blue mono">[ ЛИЧНЫЙ КАБИНЕТ ]</h1>
+        </div>
+        <a href="{{ url_for('booking.step1') }}" class="btn btn-info mono">
+          <i class="bi bi-plus-lg me-2"></i>НОВАЯ_ЗАЯВКА
+        </a>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-xl-3">
+          <div class="card bg-dark neon-border-blue shadow-lg h-100">
+            <div class="card-body">
+              <div class="text-secondary mono small mb-2">ВСЕГО ЗАЯВОК</div>
+              <div class="h3 text-white mb-0">{{ appointments|length }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-xl-3">
+          <div class="card bg-dark neon-border-blue shadow-lg h-100">
+            <div class="card-body">
+              <div class="text-secondary mono small mb-2">АКТИВНЫЕ</div>
+              <div class="h3 text-white mb-0">{{ appointments | selectattr('status', 'in', ['new', 'negotiation', 'confirmed', 'in_progress']) | list | length }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-xl-3">
+          <div class="card bg-dark neon-border-blue shadow-lg h-100">
+            <div class="card-body">
+              <div class="text-secondary mono small mb-2">ЗАКАЗ-НАРЯДЫ</div>
+              <div class="h3 text-white mb-0">{{ orders|length }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-xl-3">
+          <div class="card bg-dark neon-border-blue shadow-lg h-100">
+            <div class="card-body">
+              <div class="text-secondary mono small mb-2">ДОКУМЕНТЫ</div>
+              <div class="h3 text-white mb-0">{{ orders | map(attribute='documents') | map('length') | sum }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card bg-dark neon-border-blue shadow-lg mb-4">
+        <div class="card-header bg-transparent border-secondary border-opacity-25 py-3">
+          <h5 class="card-title m-0 mono text-white">
+            <i class="bi bi-calendar-check me-2"></i>ЖУРНАЛ ЗАЯВОК
+          </h5>
+        </div>
+        <div class="card-body p-0">
+          {% if not appointments %}
+          <div class="p-5 text-center text-secondary mono">
+            <i class="bi bi-calendar-x fs-1 d-block mb-3 opacity-25"></i>
+            ЗАЯВОК ПОКА НЕТ. МОЖНО СОЗДАТЬ НОВУЮ ЗАПИСЬ.
+          </div>
+          {% else %}
+          <div class="table-responsive">
+            <table class="table table-dark table-hover align-middle mb-0 mono small">
+              <thead class="text-secondary border-secondary border-opacity-25">
+                <tr>
+                  <th class="ps-4">ЗАЯВКА</th>
+                  <th>АВТОМОБИЛЬ</th>
+                  <th>МАСТЕР</th>
+                  <th>СТАТУС</th>
+                  <th class="text-end pe-4">ДЕЙСТВИЯ</th>
+                </tr>
+              </thead>
+              <tbody class="border-secondary border-opacity-10">
+                {% for appt in appointments %}
+                <tr data-appt-id="{{ appt.id }}">
+                  <td class="ps-4">
+                    <div class="text-white fw-bold">№{{ appt.id }} /
+                      <span id="cabinet-appt-list-time-{{ appt.id }}" class="cabinet-list-time-stack d-inline-block text-start align-top">
+                        {% for line in appt.visit_display_lines() %}
+                        <span class="d-block">{{ line }}</span>
+                        {% else %}
+                        <span class="d-block">—</span>
+                        {% endfor %}
+                      </span>
+                    </div>
+                    <div class="text-secondary smaller">Создана: {{ appt.created_at.strftime('%d.%m.%Y %H:%M') }}</div>
+                  </td>
+                  <td>
+                    <div class="text-white">{{ [appt.car_make, appt.car_model]|select|join(' ') or 'Автомобиль не указан' }}</div>
+                    {% if appt.car_number or appt.car_year %}
+                    <div class="text-secondary smaller">{{ appt.car_year or '' }} {{ appt.car_number or '' }}</div>
+                    {% endif %}
+                    {% if appt.win_number %}
+                    <div class="text-secondary smaller mono">WIN: {{ appt.win_number }}</div>
+                    {% endif %}
+                  </td>
+                  <td class="text-white">{{ appt.master.name if appt.master else 'Не назначен' }}</td>
+                  <td>
+                    <span class="cabinet-appt-status-badge badge border border-{{ appt_status_classes.get(appt.status, 'secondary') }} text-{{ appt_status_classes.get(appt.status, 'secondary') }} bg-{{ appt_status_classes.get(appt.status, 'secondary') }} bg-opacity-10 border-opacity-25">
+                      {{ appt_status_names.get(appt.status, appt.status) }}
+                    </span>
+                  </td>
+                  <td class="text-end pe-4">
+                    <a href="{{ url_for('cabinet.appointment_detail', appointment_id=appt.id) }}" class="btn btn-sm btn-outline-info mono">
+                      ОТКРЫТЬ
+                    </a>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="card bg-dark neon-border-blue shadow-lg">
+        <div class="card-header bg-transparent border-secondary border-opacity-25 py-3">
+          <h5 class="card-title m-0 mono text-white">
+            <i class="bi bi-file-earmark-text me-2"></i>ЗАКАЗ-НАРЯДЫ И ДОКУМЕНТЫ
+          </h5>
+        </div>
+        <div class="card-body">
+          {% if not orders %}
+          <div class="text-center text-secondary mono py-5">
+            <i class="bi bi-folder2-open fs-1 d-block mb-3 opacity-25"></i>
+            ДОКУМЕНТЫ ПОЯВЯТСЯ ПОСЛЕ ВИЗИТА В СЕРВИС.
+          </div>
+          {% else %}
+          <div class="row g-4">
+            {% for order in orders %}
+            <div class="col-12 col-xl-6">
+              <div class="card bg-dark border-secondary border-opacity-25 h-100">
+                <div class="card-body">
+                  <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+                    <div>
+                      <div class="text-white fw-bold">Заказ-наряд №{{ order.id }}</div>
+                      <div class="text-secondary smaller">Создан: {{ order.created_at.strftime('%d.%m.%Y %H:%M') }}</div>
+                    </div>
+                    <span class="badge border border-{{ order_status_classes.get(order.status, 'secondary') }} text-{{ order_status_classes.get(order.status, 'secondary') }} bg-{{ order_status_classes.get(order.status, 'secondary') }} bg-opacity-10 border-opacity-25">
+                      {{ order_status_names.get(order.status, order.status) }}
+                    </span>
+                  </div>
+
+                  <div class="row g-3 mb-3">
+                    <div class="col-6">
+                      <div class="text-secondary smaller mono">ОПЛАТА</div>
+                      <div class="text-white">{{ "Оплачен" if order.is_paid else "Не оплачен" }}</div>
+                    </div>
+                    <div class="col-6">
+                      <div class="text-secondary smaller mono">СУММА</div>
+                      <div class="text-white fw-bold">{{ "{:,.0f}".format(order.total_amount or 0).replace(',', ' ') }} ₽</div>
+                    </div>
+                  </div>
+
+                  {% if order.inspection_results %}
+                  <div class="border border-secondary border-opacity-25 rounded p-3 mb-3">
+                    <div class="text-secondary smaller mono mb-2">РЕЗУЛЬТАТЫ ОСМОТРА</div>
+                    <div class="text-white small">{{ order.inspection_results }}</div>
+                  </div>
+                  {% endif %}
+
+                  <div class="border border-secondary border-opacity-25 rounded p-3">
+                    <div class="text-secondary smaller mono mb-2">ДОКУМЕНТЫ</div>
+                    {% if order.documents %}
+                    <div class="d-flex flex-column gap-2">
+                      {% for doc in order.documents %}
+                      <a href="{{ url_for('cabinet.download_document', doc_id=doc.id) }}" class="d-flex align-items-center gap-2 text-decoration-none text-info">
+                        <i class="bi bi-file-earmark-arrow-down"></i>
+                        <span class="small">{{ doc.filename }}</span>
+                      </a>
+                      {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="text-secondary small">Файлы пока не загружены.</div>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
+<script>
+(function () {
+  const syncUrl = {{ url_for('cabinet.appointments_status_json')|tojson }};
+  const pollMs = 10000;
+  let timer = null;
+  async function sync() {
+    try {
+      const r = await fetch(syncUrl, { credentials: 'same-origin', cache: 'no-store' });
+      const d = await r.json();
+      if (!d.ok || !d.appointments) return;
+      d.appointments.forEach(function (a) {
+        const row = document.querySelector('tr[data-appt-id="' + a.id + '"]');
+        if (!row) return;
+        const badge = row.querySelector('.cabinet-appt-status-badge');
+        if (!badge) return;
+        const cls = a.badge_class || 'secondary';
+        badge.textContent = a.label;
+        badge.className =
+          'cabinet-appt-status-badge badge border border-' +
+          cls +
+          ' text-' +
+          cls +
+          ' bg-' +
+          cls +
+          ' bg-opacity-10 border-opacity-25';
+        const timeEl = document.getElementById('cabinet-appt-list-time-' + a.id);
+        if (timeEl && a.visit_lines !== undefined) {
+          timeEl.innerHTML = '';
+          const lines = Array.isArray(a.visit_lines) ? a.visit_lines : [];
+          if (lines.length) {
+            lines.forEach(function (line) {
+              const span = document.createElement('span');
+              span.className = 'd-block';
+              span.textContent = line;
+              timeEl.appendChild(span);
+            });
+          } else {
+            const span = document.createElement('span');
+            span.className = 'd-block';
+            span.textContent = '—';
+            timeEl.appendChild(span);
+          }
+        }
+      });
+    } catch (e) {}
+  }
+  function start() {
+    if (timer) clearInterval(timer);
+    timer = setInterval(sync, pollMs);
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) sync();
+  });
+  start();
+  sync();
+})();
+</script>
 {% endblock %}

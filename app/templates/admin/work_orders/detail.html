@@ -5,7 +5,7 @@
   <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
     <div>
       <span class="badge neon-border-blue text-white mono mb-2">WORK_ORDER_EDITOR.EXE</span>
-      <h1 class="h2 m-0 neon-text-blue mono">[ ЗАКАЗ-НАРЯД №{{ order.id }} ]</h1>
+      <h1 class="h2 m-0 neon-text-blue mono">ЗАКАЗ-НАРЯД №{{ order.id }}</h1>
     </div>
     <div class="d-flex gap-2">
       {% if not order.is_paid %}
@@ -41,8 +41,65 @@
             </div>
             <div class="card-body p-4">
               <div class="p-3 bg-dark bg-opacity-50 border border-secondary border-opacity-25 rounded mono small text-white">
-                {% if order.appointment and order.appointment.problem_description %}
-                  {{ order.appointment.problem_description }}
+                {% if order.complaints %}
+                  <ul class="list-group list-group-flush">
+                    {% for complaint in order.complaints %}
+                      <li class="list-group-item bg-dark border-secondary border-opacity-25">
+                        <div class="d-flex align-items-start gap-2">
+                          <div class="flex-grow-1">
+                            <span class="mono small">{{ loop.index }}. {{ complaint.description }}</span>
+                            {% if complaint.is_refused and complaint.refusal_reason %}
+                              <div class="text-danger mono smaller mt-1">
+                                <i class="bi bi-x-circle me-1"></i>ОТКАЗ: {{ complaint.refusal_reason }}
+                              </div>
+                            {% endif %}
+                          </div>
+                          <div class="d-flex gap-1">
+                            {% if not complaint.is_refused %}
+                              <form action="{{ url_for('admin.work_order_complaint_done', order_id=order.id, complaint_id=complaint.id) }}" method="POST" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-success border-0"><i class="bi bi-check-lg"></i></button>
+                              </form>
+                            {% endif %}
+                            <form action="{{ url_for('admin.work_order_complaint_refuse', order_id=order.id, complaint_id=complaint.id) }}" method="POST" class="d-inline">
+                              <button type="button" class="btn btn-sm btn-danger border-0" data-bs-toggle="modal" data-bs-target="#complaintRefuseModal{{ complaint.id }}"><i class="bi bi-x-lg"></i></button>
+                            </form>
+                            <!-- Модальное окно для указания причины отказа -->
+                            <div class="modal fade" id="complaintRefuseModal{{ complaint.id }}" tabindex="-1" aria-hidden="true">
+                              <div class="modal-dialog modal-dialog-centered">
+                                <div class="modal-content bg-dark neon-border-pink">
+                                  <div class="modal-header border-secondary border-opacity-25">
+                                    <h5 class="modal-title mono text-white">ПРИЧИНА_ОТКАЗА</h5>
+                                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                                  </div>
+                                  <div class="modal-body">
+                                    <form action="{{ url_for('admin.work_order_complaint_refuse', order_id=order.id, complaint_id=complaint.id) }}" method="POST">
+                                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                      <div class="mb-3">
+                                        <label class="form-label mono text-secondary small">ПРИЧИНА_ОТКАЗА</label>
+                                        <textarea name="refusal_reason" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" rows="3" placeholder="Укажите причину отказа..." required></textarea>
+                                      </div>
+                                      <button type="submit" class="btn btn-danger w-100 mono">ОТМЕТИТЬ_ОТКАЗОМ.EXE</button>
+                                    </form>
+                                  </div>
+                                  <div class="modal-footer border-secondary border-opacity-25">
+                                    <button type="button" class="btn btn-outline-secondary mono" data-bs-dismiss="modal">ОТМЕНА</button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </li>
+                    {% endfor %}
+                  </ul>
+                {% elif order.appointment and order.appointment.problem_description %}
+                  <ul class="list-unstyled">
+                    {% for item in order.appointment.problem_items() %}
+                      <li class="mb-2">
+                        <span class="mono small">• {{ item }}</span>
+                      </li>
+                    {% endfor %}
+                  </ul>
                 {% else %}
                   <span class="text-secondary">ОПИСАНИЕ_ОТСУТСТВУЕТ.NULL</span>
                 {% endif %}
@@ -70,69 +127,138 @@
         </div>
       </div>
 
-      <!-- 2. Фотоотчет (Gallery) -->
-      <div class="card bg-dark neon-border-blue shadow-lg mb-4">
-        <div class="card-header border-secondary border-opacity-25 bg-transparent py-3 d-flex justify-content-between align-items-center">
-          <h5 class="card-title m-0 mono text-white small"><i class="bi bi-camera me-2"></i>ФОТООТЧЕТ_ОСМОТРА_И_РЕМОНТА</h5>
-          <button class="btn btn-sm btn-info mono" type="button" data-bs-toggle="collapse" data-bs-target="#uploadPhotoCollapse">
-            + ДОБАВИТЬ_ФОТО
-          </button>
-        </div>
-        
-        <div class="collapse" id="uploadPhotoCollapse">
-          <div class="card-body border-bottom border-secondary border-opacity-25 bg-dark bg-opacity-50">
-            <form action="{{ url_for('admin.work_order_upload', order_id=order.id) }}" method="POST" enctype="multipart/form-data">
-              {{ doc_form.hidden_tag() }}
-              <div class="input-group">
-                {{ doc_form.files(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", multiple=True, accept="image/*") }}
-                <button type="submit" class="btn btn-info mono fw-bold px-4">
-                  <i class="bi bi-upload me-2"></i>UPLOAD
-                </button>
+      <!-- 2. Фотоотчет + Документы (2 колонки) -->
+      <div class="row g-4 mb-4">
+        <div class="col-lg-6">
+          <div class="card bg-dark neon-border-blue shadow-lg h-100">
+            <div class="card-header border-secondary border-opacity-25 bg-transparent py-3 d-flex justify-content-between align-items-center">
+              <h5 class="card-title m-0 mono text-white small"><i class="bi bi-camera me-2"></i>ФОТООТЧЕТ</h5>
+              <button class="btn btn-sm btn-outline-warning mono" type="button" data-bs-toggle="collapse" data-bs-target="#uploadPhotoCollapse">
+                + ДОБАВИТЬ
+              </button>
+            </div>
+
+            <div class="collapse" id="uploadPhotoCollapse">
+              <div class="card-body border-bottom border-secondary border-opacity-25 bg-dark bg-opacity-50">
+                <form action="{{ url_for('admin.work_order_upload', order_id=order.id) }}" method="POST" enctype="multipart/form-data">
+                  {{ doc_form.hidden_tag() }}
+                  <div class="input-group">
+                    {{ doc_form.files(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", multiple=True, accept="image/*") }}
+                    <button type="submit" class="btn btn-sm btn-outline-warning mono fw-bold px-4">
+                      <i class="bi bi-upload me-2"></i>UPLOAD
+                    </button>
+                  </div>
+                </form>
               </div>
-            </form>
+            </div>
+
+            <div class="card-body p-4">
+              {% set photos = [] %}
+              {% for doc in order.documents %}
+                {% if doc.mime and doc.mime.startswith('image/') %}
+                  {% set _ = photos.append(doc) %}
+                {% endif %}
+              {% endfor %}
+
+              {% if not photos %}
+                <div class="text-center py-4 text-secondary mono small">
+                  <i class="bi bi-images fs-2 d-block mb-2 opacity-25"></i>
+                  ФОТОГРАФИИ_ОТСУТСТВУЮТ.NULL
+                </div>
+              {% else %}
+                <div class="row g-3">
+                  {% for photo in photos %}
+                  <div class="col-6 col-md-4">
+                    <div class="position-relative group neon-hover-trigger">
+                      <a href="#" data-bs-toggle="modal" data-bs-target="#imageViewerModal"
+                         data-bs-image="{{ url_for('admin.get_document', filename=photo.storage_path) }}"
+                         data-bs-title="{{ photo.filename }}"
+                         data-bs-delete-url="{{ url_for('admin.work_order_document_delete', order_id=order.id, doc_id=photo.id) }}">
+                        <img src="{{ url_for('admin.get_document', filename=photo.storage_path) }}" class="img-fluid rounded border border-secondary border-opacity-25 neon-border-blue-hover" alt="Photo" style="aspect-ratio: 1/1; object-fit: cover;">
+                      </a>
+                      <div class="position-absolute top-0 end-0 p-1">
+                        <form action="{{ url_for('admin.work_order_document_delete', order_id=order.id, doc_id=photo.id) }}" method="POST">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                          <button type="submit" class="btn btn-sm btn-danger bg-opacity-75 border-0 p-1 px-2" onclick="return confirm('Удалить фото?')">
+                            <i class="bi bi-trash"></i>
+                          </button>
+                        </form>
+                      </div>
+                      <div class="position-absolute bottom-0 start-0 end-0 p-2 bg-dark bg-opacity-75 mono smaller text-white text-truncate rounded-bottom">
+                        {{ photo.filename }}
+                      </div>
+                    </div>
+                  </div>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </div>
           </div>
         </div>
 
-        <div class="card-body p-4">
-          {% set photos = [] %}
-          {% for doc in order.documents %}
-            {% if doc.mime and doc.mime.startswith('image/') %}
-              {% set _ = photos.append(doc) %}
-            {% endif %}
-          {% endfor %}
+        <div class="col-lg-6">
+          <div class="card bg-dark neon-border-blue shadow-lg h-100">
+            <div class="card-header border-secondary border-opacity-25 bg-transparent py-3 d-flex justify-content-between align-items-center">
+              <h5 class="card-title m-0 mono text-white small"><i class="bi bi-file-earmark-text me-2"></i>ДОКУМЕНТЫ</h5>
+              <button class="btn btn-sm btn-outline-warning mono" type="button" data-bs-toggle="collapse" data-bs-target="#uploadDocsCollapse">
+                + ДОБАВИТЬ
+              </button>
+            </div>
 
-          {% if not photos %}
-            <div class="text-center py-4 text-secondary mono small">
-              <i class="bi bi-images fs-2 d-block mb-2 opacity-25"></i>
-              ФОТОГРАФИИ_ОТСУТСТВУЮТ.NULL ({{ order.documents|length }} файлов всего)
-            </div>
-          {% else %}
-            <div class="row g-3">
-              {% for photo in photos %}
-              <div class="col-6 col-md-4 col-lg-3">
-                <div class="position-relative group neon-hover-trigger">
-                  <a href="#" data-bs-toggle="modal" data-bs-target="#imageViewerModal" 
-                     data-bs-image="{{ url_for('admin.get_document', filename=photo.storage_path) }}" 
-                     data-bs-title="{{ photo.filename }}"
-                     data-bs-delete-url="{{ url_for('admin.work_order_document_delete', order_id=order.id, doc_id=photo.id) }}">
-                    <img src="{{ url_for('admin.get_document', filename=photo.storage_path) }}" class="img-fluid rounded border border-secondary border-opacity-25 neon-border-blue-hover" alt="Photo" style="aspect-ratio: 1/1; object-fit: cover;">
-                  </a>
-                  <div class="position-absolute top-0 end-0 p-1">
-                    <form action="{{ url_for('admin.work_order_document_delete', order_id=order.id, doc_id=photo.id) }}" method="POST">
-                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <button type="submit" class="btn btn-sm btn-danger bg-opacity-75 border-0 p-1 px-2" onclick="return confirm('Удалить фото?')">
-                        <i class="bi bi-trash"></i>
-                      </button>
-                    </form>
+            <div class="collapse" id="uploadDocsCollapse">
+              <div class="card-body border-bottom border-secondary border-opacity-25 bg-dark bg-opacity-50">
+                <form action="{{ url_for('admin.work_order_upload', order_id=order.id) }}" method="POST" enctype="multipart/form-data">
+                  {{ doc_form.hidden_tag() }}
+                  <div class="input-group">
+                    {{ doc_form.files(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", multiple=True) }}
+                    <button type="submit" class="btn btn-sm btn-outline-warning mono fw-bold px-4">
+                      <i class="bi bi-upload me-2"></i>UPLOAD
+                    </button>
                   </div>
-                  <div class="position-absolute bottom-0 start-0 end-0 p-2 bg-dark bg-opacity-75 mono smaller text-white text-truncate rounded-bottom">
-                    {{ photo.filename }}
-                  </div>
-                </div>
+                  <div class="form-text text-secondary mono smaller mt-2">Поддерживаются PDF, DOCX и др. (макс. 10МБ)</div>
+                </form>
               </div>
-              {% endfor %}
             </div>
-          {% endif %}
+
+            <div class="card-body p-4">
+              {% set docs = [] %}
+              {% for doc in order.documents %}
+                {% if not (doc.mime and doc.mime.startswith('image/')) %}
+                  {% set _ = docs.append(doc) %}
+                {% endif %}
+              {% endfor %}
+
+              {% if not docs %}
+                <div class="text-center py-4 text-secondary mono small">
+                  <i class="bi bi-file-earmark-x fs-2 d-block mb-2 opacity-25"></i>
+                  ДОКУМЕНТЫ_ОТСУТСТВУЮТ.NULL
+                </div>
+              {% else %}
+                <div class="row g-3">
+                  {% for doc in docs %}
+                  <div class="col-12">
+                    <div class="d-flex align-items-center p-3 border border-secondary border-opacity-25 rounded bg-dark bg-opacity-50">
+                      <div class="flex-shrink-0 me-3">
+                        <i class="bi bi-file-earmark-text fs-3 neon-text-blue"></i>
+                      </div>
+                      <div class="flex-grow-1 overflow-hidden">
+                        <div class="text-white mono small text-truncate">{{ doc.filename }}</div>
+                        <div class="text-secondary smaller mono">{{ (doc.size_bytes / 1024) | round(1) }} KB | {{ doc.uploaded_at.strftime('%d.%m.%Y') }}</div>
+                      </div>
+                      <div class="flex-shrink-0 ms-2 d-flex gap-2">
+                        <a href="{{ url_for('admin.get_document', filename=doc.storage_path) }}" target="_blank" class="btn btn-sm btn-outline-info"><i class="bi bi-download"></i></a>
+                        <form action="{{ url_for('admin.work_order_document_delete', order_id=order.id, doc_id=doc.id) }}" method="POST" class="d-inline">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                          <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить документ?')"><i class="bi bi-trash"></i></button>
+                        </form>
+                      </div>
+                    </div>
+                  </div>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -140,8 +266,8 @@
       <div class="card bg-dark neon-border-blue mb-4">
         <div class="card-header border-secondary border-opacity-25 bg-transparent py-3 d-flex justify-content-between align-items-center">
           <h5 class="card-title m-0 mono text-white small"><i class="bi bi-tools me-2"></i>РАБОТЫ</h5>
-          <button class="btn btn-sm btn-info mono" type="button" data-bs-toggle="collapse" data-bs-target="#addWorkCollapse">
-            + ДОБАВИТЬ_РАБОТУ
+          <button class="btn btn-sm btn-outline-warning mono" type="button" data-bs-toggle="collapse" data-bs-target="#addWorkCollapse">
+            + ДОБАВИТЬ
           </button>
         </div>
         
@@ -178,7 +304,7 @@
                   {{ item_form.is_done(class="form-check-input") }}
                   <label class="form-check-label mono text-secondary small" for="is_done">ВЫПОЛНЕНО</label>
                 </div>
-                <button type="submit" class="btn btn-info btn-sm mono">ДОБАВИТЬ.SH</button>
+                <button type="submit" class="btn btn-sm btn-outline-warning mono">ДОБАВИТЬ.SH</button>
               </div>
             </form>
           </div>
@@ -267,42 +393,98 @@
             </table>
           </div>
         </div>
+        {% set ns = namespace(s=0) %}{% for item in order.items %}{% set ns.s = ns.s + (item.price or 0) %}{% endfor %}
+        <div class="card-footer border-secondary border-opacity-25 bg-transparent py-2 d-flex justify-content-end align-items-center flex-wrap gap-2">
+          <span class="mono small text-secondary">Итого по работам:</span>
+          <span class="mono small neon-text-blue fw-bold" id="subtotal-works">{{ ns.s | int }} РУБ.</span>
+        </div>
       </div>
 
-      <!-- 4. Запчасти и материалы (Parts) -->
+      <!-- 3.5. Дополнительные работы (сторонние специалисты, не начисляется %) -->
       <div class="card bg-dark neon-border-blue mb-4">
         <div class="card-header border-secondary border-opacity-25 bg-transparent py-3 d-flex justify-content-between align-items-center">
-          <h5 class="card-title m-0 mono text-white small"><i class="bi bi-box-seam me-2"></i>ЗАПЧАСТИ_И_МАТЕРИАЛЫ</h5>
-          <button class="btn btn-sm btn-info mono" type="button" data-bs-toggle="collapse" data-bs-target="#addPartCollapse">
-            + ДОБАВИТЬ_ПОЗИЦИЮ
+          <h5 class="card-title m-0 mono text-white small"><i class="bi bi-person-gear me-2"></i>ДОПОЛНИТЕЛЬНЫЕ_РАБОТЫ <span class="text-secondary smaller">(сторонние исполнители)</span></h5>
+          <button class="btn btn-sm btn-outline-warning mono" type="button" data-bs-toggle="collapse" data-bs-target="#addAddWorkCollapse">
+            + ДОБАВИТЬ
           </button>
         </div>
 
-        <div class="collapse" id="addPartCollapse">
+        <div class="collapse" id="addAddWorkCollapse">
           <div class="card-body border-bottom border-secondary border-opacity-25 bg-dark bg-opacity-50">
-            <form action="{{ url_for('admin.work_order_part_add', order_id=order.id) }}" method="POST" class="row g-3">
-              {{ part_form.hidden_tag() }}
-              <div class="col-md-5">
+            <form action="{{ url_for('admin.work_order_additional_work_add', order_id=order.id) }}" method="POST" class="row g-3">
+              {{ additional_work_form.hidden_tag() }}
+              <div class="col-md-6">
                 <label class="form-label mono text-secondary small">НАИМЕНОВАНИЕ</label>
-                {{ part_form.title(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Фильтр масляный...") }}
-              </div>
-              <div class="col-md-2">
-                <label class="form-label mono text-secondary small">КОЛ-ВО</label>
-                {{ part_form.quantity(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", type="number", step="0.1") }}
-              </div>
-              <div class="col-md-2">
-                <label class="form-label mono text-secondary small">ЕД.ИЗМ</label>
-                {{ part_form.unit(class="form-control bg-dark text-white border-secondary border-opacity-50 mono") }}
+                {{ additional_work_form.title(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Мойка автомобиля...") }}
               </div>
               <div class="col-md-3">
-                <label class="form-label mono text-secondary small">ЦЕНА (РУБ)</label>
-                {{ part_form.price(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", type="number") }}
+                <label class="form-label mono text-secondary small">СУММА (РУБ)</label>
+                {{ additional_work_form.price(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", type="number", min="0") }}
+              </div>
+              <div class="col-md-3">
+                <label class="form-label mono text-secondary small">КОММЕНТАРИЙ</label>
+                {{ additional_work_form.comment(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="...") }}
               </div>
               <div class="col-12 text-end">
-                <button type="submit" class="btn btn-info btn-sm mono">ДОБАВИТЬ.SH</button>
+                <button type="submit" class="btn btn-sm btn-outline-warning mono">ДОБАВИТЬ.SH</button>
               </div>
             </form>
           </div>
+        </div>
+
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 mono small">
+              <thead class="text-secondary border-secondary border-opacity-25">
+                <tr>
+                  <th class="ps-4">НАИМЕНОВАНИЕ</th>
+                  <th class="text-end">СУММА</th>
+                  <th>КОММЕНТАРИЙ</th>
+                  <th class="text-end pe-4">ДЕЙСТВИЕ</th>
+                </tr>
+              </thead>
+              <tbody class="border-secondary border-opacity-10" id="order-addworks-tbody">
+                {% for aw in order.additional_works %}
+                <tr>
+                  <td class="ps-4">> {{ aw.title }}</td>
+                  <td class="neon-text-blue text-end">{{ aw.price }} РУБ.</td>
+                  <td class="text-secondary smaller">{{ aw.comment or '' }}</td>
+                  <td class="text-end pe-4">
+                    <button type="button" class="btn btn-sm btn-outline-primary border-0 pm-edit-line"
+                      data-kind="additional_work"
+                      data-line='{{ {"id": aw.id, "title": aw.title, "price": aw.price|int, "comment": aw.comment or "" }|tojson }}'>
+                      <i class="bi bi-pencil"></i>
+                    </button>
+                    <form action="{{ url_for('admin.work_order_additional_work_delete', order_id=order.id, row_id=aw.id) }}" method="POST" class="d-inline">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" class="btn btn-sm btn-outline-danger border-0"><i class="bi bi-trash"></i></button>
+                    </form>
+                  </td>
+                </tr>
+                {% endfor %}
+                {% if not order.additional_works %}
+                <tr id="order-addworks-empty-row">
+                  <td colspan="4" class="text-center py-4 text-secondary">СПИСОК_ПУСТ.EMPTY</td>
+                </tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% set ns = namespace(s=0) %}{% for aw in order.additional_works %}{% set ns.s = ns.s + (aw.price or 0) %}{% endfor %}
+        <div class="card-footer border-secondary border-opacity-25 bg-transparent py-2 d-flex justify-content-end align-items-center flex-wrap gap-2">
+          <span class="mono small text-secondary">Итого по доп. работам:</span>
+          <span class="mono small neon-text-blue fw-bold" id="subtotal-addworks">{{ ns.s | int }} РУБ.</span>
+        </div>
+      </div>
+
+      <!-- 4. Детали (объединено: запчасти + детали) -->
+      <div class="card bg-dark neon-border-blue mb-4">
+        <div class="card-header border-secondary border-opacity-25 bg-transparent py-3 d-flex justify-content-between align-items-center">
+          <h5 class="card-title m-0 mono text-white small"><i class="bi bi-box-seam me-2"></i>ДЕТАЛИ</h5>
+          <button id="open-add-details" type="button" class="btn btn-sm btn-outline-warning mono" data-bs-toggle="modal" data-bs-target="#addInventoryModal">
+            + ДОБАВИТЬ
+          </button>
         </div>
 
         <div class="card-body p-0">
@@ -317,86 +499,615 @@
                   <th class="text-end pe-4">ДЕЙСТВИЕ</th>
                 </tr>
               </thead>
-              <tbody class="border-secondary border-opacity-10">
-                {% for part in order.parts %}
+              <tbody class="border-secondary border-opacity-10" id="order-details-tbody">
+                {% for inv_kind, inv_row in merged_inventory_rows %}
+                {% if inv_kind == 'part' %}
                 <tr>
-                  <td class="ps-4">> {{ part.title }}</td>
-                  <td>{{ part.quantity }} {{ part.unit }}</td>
-                  <td>{{ part.price }} РУБ.</td>
-                  <td class="neon-text-blue">{{ (part.price * part.quantity) | int }} РУБ.</td>
+                  <td class="ps-4">> {{ inv_row.title }}</td>
+                  <td>{{ inv_row.quantity }} {{ inv_row.unit }}</td>
+                  <td>{{ inv_row.price }} РУБ.</td>
+                  <td class="neon-text-blue">{{ (inv_row.price * inv_row.quantity) | int }} РУБ.</td>
                   <td class="text-end pe-4">
-                    <form action="{{ url_for('admin.work_order_part_delete', order_id=order.id, part_id=part.id) }}" method="POST" class="d-inline">
+                    <button type="button" class="btn btn-sm btn-outline-primary border-0 pm-edit-line"
+                      data-kind="part"
+                      data-line='{{ {"id": inv_row.id, "title": inv_row.title, "quantity": inv_row.quantity, "unit": inv_row.unit or "", "price": inv_row.price|int }|tojson }}'>
+                      <i class="bi bi-pencil"></i>
+                    </button>
+                    <form action="{{ url_for('admin.work_order_part_delete', order_id=order.id, part_id=inv_row.id) }}" method="POST" class="d-inline">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <button type="submit" class="btn btn-sm btn-outline-danger border-0"><i class="bi bi-trash"></i></button>
                     </form>
                   </td>
                 </tr>
-                {% endfor %}
-                
-                {% if not order.parts %}
+                {% else %}
                 <tr>
-                  <td colspan="5" class="text-center py-4 text-secondary">СПИСОК_ЗАПЧАСТЕЙ_ПУСТ.EMPTY</td>
+                  <td class="ps-4">> {{ inv_row.title }}</td>
+                  <td>{{ inv_row.quantity }} {{ inv_row.unit }}</td>
+                  <td>{{ inv_row.price }} РУБ.</td>
+                  <td class="neon-text-blue">{{ (inv_row.price * inv_row.quantity) | int }} РУБ.</td>
+                  <td class="text-end pe-4">
+                    <button type="button" class="btn btn-sm btn-outline-primary border-0 pm-edit-line"
+                      data-kind="detail"
+                      data-line='{{ {"id": inv_row.id, "title": inv_row.title, "quantity": inv_row.quantity, "unit": inv_row.unit or "", "price": inv_row.price|int }|tojson }}'>
+                      <i class="bi bi-pencil"></i>
+                    </button>
+                    <form action="{{ url_for('admin.work_order_detail_delete', order_id=order.id, detail_id=inv_row.id) }}" method="POST" class="d-inline">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" class="btn btn-sm btn-outline-danger border-0"><i class="bi bi-trash"></i></button>
+                    </form>
+                  </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+                {% if not merged_inventory_rows %}
+                <tr id="order-details-empty-row">
+                  <td colspan="5" class="text-center py-4 text-secondary">СПИСОК_ДЕТАЛЕЙ_ПУСТ.EMPTY</td>
                 </tr>
                 {% endif %}
               </tbody>
             </table>
           </div>
         </div>
+        {% set ns = namespace(s=0) %}{% for _, r in merged_inventory_rows %}{% set ns.s = ns.s + ((r.price or 0) * (r.quantity or 0))|int %}{% endfor %}
+        <div class="card-footer border-secondary border-opacity-25 bg-transparent py-2 d-flex justify-content-end align-items-center flex-wrap gap-2">
+          <span class="mono small text-secondary">Итого по деталям:</span>
+          <span class="mono small neon-text-blue fw-bold" id="subtotal-details">{{ ns.s | int }} РУБ.</span>
+        </div>
       </div>
 
-      <!-- 5. Все документы (Other Files) -->
-      <div class="card bg-dark neon-border-blue shadow-lg">
-        <div class="card-header border-secondary border-opacity-25 bg-transparent py-3">
-          <h5 class="card-title m-0 mono text-white small"><i class="bi bi-file-earmark-pdf me-2"></i>ДОКУМЕНТЫ_И_ФАЙЛЫ</h5>
+      <!-- 5. Материалы -->
+      <div class="card bg-dark neon-border-blue mb-4">
+        <div class="card-header border-secondary border-opacity-25 bg-transparent py-3 d-flex justify-content-between align-items-center">
+          <h5 class="card-title m-0 mono text-white small"><i class="bi bi-droplet me-2"></i>МАТЕРИАЛЫ</h5>
+          <button id="open-add-materials" type="button" class="btn btn-sm btn-outline-warning mono" data-bs-toggle="modal" data-bs-target="#addInventoryModal">
+            + ДОБАВИТЬ
+          </button>
         </div>
-        <div class="card-body p-4">
-          {% set docs = [] %}
-          {% for doc in order.documents %}
-            {% if not doc.mime.startswith('image/') %}
-              {% set _ = docs.append(doc) %}
-            {% endif %}
-          {% endfor %}
 
-          {% if not docs %}
-            <div class="alert bg-dark border-secondary border-opacity-25 text-secondary mono small mb-4">
-              <i class="bi bi-exclamation-triangle me-2"></i>ДОКУМЕНТЫ_ОТСУТСТВУЮТ.NULL
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 mono small">
+              <thead class="text-secondary border-secondary border-opacity-25">
+                <tr>
+                  <th class="ps-4">НАИМЕНОВАНИЕ</th>
+                  <th>КОЛ-ВО</th>
+                  <th>ЦЕНА</th>
+                  <th>ИТОГО</th>
+                  <th class="text-end pe-4">ДЕЙСТВИЕ</th>
+                </tr>
+              </thead>
+              <tbody class="border-secondary border-opacity-10" id="order-materials-tbody">
+                {% for material in selected_materials_list %}
+                <tr>
+                  <td class="ps-4">> {{ material.title }}</td>
+                  <td>{{ material.quantity }} {{ material.unit }}</td>
+                  <td>{{ material.price }} РУБ.</td>
+                  <td class="neon-text-blue">{{ (material.price * material.quantity) | int }} РУБ.</td>
+                  <td class="text-end pe-4">
+                    <button type="button" class="btn btn-sm btn-outline-primary border-0 pm-edit-line"
+                      data-kind="material"
+                      data-line='{{ {"id": material.id, "title": material.title, "quantity": material.quantity, "unit": material.unit or "", "price": material.price|int }|tojson }}'>
+                      <i class="bi bi-pencil"></i>
+                    </button>
+                    <form action="{{ url_for('admin.work_order_material_delete', order_id=order.id, material_id=material.id) }}" method="POST" class="d-inline">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" class="btn btn-sm btn-outline-danger border-0"><i class="bi bi-trash"></i></button>
+                    </form>
+                  </td>
+                </tr>
+                {% endfor %}
+                {% if not selected_materials_list %}
+                <tr id="order-materials-empty-row">
+                  <td colspan="5" class="text-center py-4 text-secondary">СПИСОК_МАТЕРИАЛОВ_ПУСТ.EMPTY</td>
+                </tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% set ns = namespace(s=0) %}{% for m in selected_materials_list %}{% set ns.s = ns.s + ((m.price or 0) * (m.quantity or 0))|int %}{% endfor %}
+        <div class="card-footer border-secondary border-opacity-25 bg-transparent py-2 d-flex justify-content-end align-items-center flex-wrap gap-2">
+          <span class="mono small text-secondary">Итого по материалам:</span>
+          <span class="mono small neon-text-blue fw-bold" id="subtotal-materials">{{ ns.s | int }} РУБ.</span>
+        </div>
+      </div>
+
+      <!-- Модалка: добавление деталей / материалов из каталога -->
+      <div class="modal fade" id="addInventoryModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-scrollable modal-xl modal-dialog-centered">
+          <div class="modal-content bg-dark neon-border-blue">
+            <div class="modal-header border-secondary border-opacity-25">
+              <h5 class="modal-title mono text-white" id="addInventoryModalLabel">ДОБАВЛЕНИЕ_ПОЗИЦИЙ</h5>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-          {% else %}
-            <div class="row g-3 mb-4">
-              {% for doc in docs %}
-              <div class="col-md-6">
-                <div class="d-flex align-items-center p-3 border border-secondary border-opacity-25 rounded bg-dark bg-opacity-50">
-                  <div class="flex-shrink-0 me-3">
-                    <i class="bi bi-file-earmark-text fs-3 neon-text-blue"></i>
+            <div class="modal-body">
+              <ul class="nav nav-pills gap-2 mb-3" role="tablist">
+                <li class="nav-item" role="presentation">
+                  <button class="nav-link active mono small" data-bs-toggle="pill" data-bs-target="#inv-pane-catalog" type="button" role="tab">ПОИСК_В_КАТАЛОГЕ</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                  <button class="nav-link mono small" data-bs-toggle="pill" data-bs-target="#inv-pane-create" type="button" role="tab">СОЗДАТЬ_НОВУЮ</button>
+                </li>
+              </ul>
+
+              <div class="tab-content">
+                <div class="tab-pane fade show active" id="inv-pane-catalog" role="tabpanel">
+                  <div class="row g-3 mb-3">
+                    <div class="col-lg-8">
+                      <input id="pm-search" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" placeholder="Поиск по части строки…">
+                    </div>
+                    <div class="col-lg-4 d-flex align-items-center justify-content-lg-end">
+                      <div id="pm-status" class="text-secondary mono small"></div>
+                    </div>
                   </div>
-                  <div class="flex-grow-1 overflow-hidden">
-                    <div class="text-white mono small text-truncate">{{ doc.filename }}</div>
-                    <div class="text-secondary smaller mono">{{ (doc.size_bytes / 1024) | round(1) }} KB | {{ doc.uploaded_at.strftime('%d.%m.%Y') }}</div>
-                  </div>
-                  <div class="flex-shrink-0 ms-2">
-                    <a href="{{ url_for('admin.get_document', filename=doc.storage_path) }}" target="_blank" class="btn btn-sm btn-outline-info"><i class="bi bi-download"></i></a>
+
+                  <ul class="nav nav-pills gap-2 mb-3" role="tablist">
+                    <li class="nav-item" role="presentation">
+                      <button class="nav-link active mono small" id="inv-tab-details" data-bs-toggle="pill" data-bs-target="#inv-pane-det" type="button" role="tab">ДЕТАЛИ</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                      <button class="nav-link mono small" id="inv-tab-materials" data-bs-toggle="pill" data-bs-target="#inv-pane-mat" type="button" role="tab">МАТЕРИАЛЫ</button>
+                    </li>
+                  </ul>
+
+                  <div class="tab-content">
+                    <div class="tab-pane fade show active" id="inv-pane-det" role="tabpanel">
+                      <div class="border border-secondary border-opacity-25 rounded p-2">
+                        {% for group, items in detail_catalog_groups.items() %}
+                          <div class="mb-2 pm-group">
+                            <button class="btn btn-sm btn-outline-info w-100 text-start mono" type="button" data-bs-toggle="collapse" data-bs-target="#inv-det-{{ loop.index }}">
+                              <i class="bi bi-folder2-open me-2"></i>{{ group }}
+                            </button>
+                            <div class="collapse {{ 'show' if group == 'ПОПУЛЯРНЫЕ' else '' }} mt-2" id="inv-det-{{ loop.index }}">
+                              <div class="list-group list-group-flush">
+                                {% for it in items %}
+                                  <button type="button"
+                                    class="list-group-item list-group-item-action bg-dark text-white border-secondary border-opacity-25 d-flex justify-content-between align-items-center pm-item"
+                                    data-title="{{ it.title }}"
+                                    data-unit="{{ it.unit }}"
+                                    data-price="{{ it.price }}"
+                                    data-kind="detail"
+                                    data-search="{{ (it.title ~ ' ' ~ it.unit)|lower }}"
+                                  >
+                                    <span class="mono small">> {{ it.title }}</span>
+                                    <span class="d-flex gap-2 align-items-center">
+                                      <span class="badge border border-secondary text-secondary bg-secondary bg-opacity-10 border-opacity-25 mono">{{ it.unit }}</span>
+                                      <span class="badge border border-success text-success bg-success bg-opacity-10 border-opacity-25 mono">{{ it.price }} РУБ</span>
+                                      <span class="badge bg-info text-dark mono">+</span>
+                                    </span>
+                                  </button>
+                                {% else %}
+                                  <div class="list-group-item bg-dark text-secondary border-secondary border-opacity-25 mono small">ПУСТО</div>
+                                {% endfor %}
+                              </div>
+                            </div>
+                          </div>
+                        {% endfor %}
+                      </div>
+                    </div>
+
+                    <div class="tab-pane fade" id="inv-pane-mat" role="tabpanel">
+                      <div class="border border-secondary border-opacity-25 rounded p-2">
+                        {% for group, items in materials_catalog_groups.items() %}
+                          <div class="mb-2 pm-group">
+                            <button class="btn btn-sm btn-outline-warning w-100 text-start mono" type="button" data-bs-toggle="collapse" data-bs-target="#inv-mat-{{ loop.index }}">
+                              <i class="bi bi-folder2-open me-2"></i>{{ group }}
+                            </button>
+                            <div class="collapse {{ 'show' if group == 'ПОПУЛЯРНЫЕ' else '' }} mt-2" id="inv-mat-{{ loop.index }}">
+                              <div class="list-group list-group-flush">
+                                {% for it in items %}
+                                  <button type="button"
+                                    class="list-group-item list-group-item-action bg-dark text-white border-secondary border-opacity-25 d-flex justify-content-between align-items-center pm-item"
+                                    data-title="{{ it.title }}"
+                                    data-unit="{{ it.unit }}"
+                                    data-price="{{ it.price }}"
+                                    data-kind="material"
+                                    data-search="{{ (it.title ~ ' ' ~ it.unit)|lower }}"
+                                  >
+                                    <span class="mono small">> {{ it.title }}</span>
+                                    <span class="d-flex gap-2 align-items-center">
+                                      <span class="badge border border-secondary text-secondary bg-secondary bg-opacity-10 border-opacity-25 mono">{{ it.unit }}</span>
+                                      <span class="badge border border-success text-success bg-success bg-opacity-10 border-opacity-25 mono">{{ it.price }} РУБ</span>
+                                      <span class="badge bg-info text-dark mono">+</span>
+                                    </span>
+                                  </button>
+                                {% else %}
+                                  <div class="list-group-item bg-dark text-secondary border-secondary border-opacity-25 mono small">ПУСТО</div>
+                                {% endfor %}
+                              </div>
+                            </div>
+                          </div>
+                        {% endfor %}
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-              {% endfor %}
-            </div>
-          {% endif %}
 
-          <div class="border-top border-secondary border-opacity-25 pt-4 mt-2">
-            <h6 class="mono text-white small mb-3">> ЗАГРУЗИТЬ_НОВЫЕ_ФАЙЛЫ.SH</h6>
-            <form action="{{ url_for('admin.work_order_upload', order_id=order.id) }}" method="POST" enctype="multipart/form-data">
-              {{ doc_form.hidden_tag() }}
-              <div class="input-group">
-                {{ doc_form.files(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", multiple=True) }}
-                <button type="submit" class="btn btn-info mono fw-bold px-4">
-                  <i class="bi bi-upload me-2"></i>UPLOAD
-                </button>
+                <div class="tab-pane fade" id="inv-pane-create" role="tabpanel">
+                  <form id="pm-create-form" class="row g-3">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="col-md-6">
+                      <label class="form-label mono text-secondary small">НАИМЕНОВАНИЕ</label>
+                      <input name="title" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" placeholder="Фильтр масляный..." required>
+                    </div>
+                    <div class="col-md-2">
+                      <label class="form-label mono text-secondary small">КОЛ-ВО</label>
+                      <input name="quantity" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" type="number" step="0.1" min="0" value="1" required>
+                    </div>
+                    <div class="col-md-2">
+                      <label class="form-label mono text-secondary small">ЕД.ИЗМ</label>
+                      <input name="unit" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" value="шт.">
+                    </div>
+                    <div class="col-md-2">
+                      <label class="form-label mono text-secondary small">ЦЕНА (РУБ)</label>
+                      <input name="price" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" type="number" min="0" value="0" required>
+                    </div>
+                    <div class="col-12">
+                      <button type="submit" class="btn btn-outline-warning w-100 mono">СОЗДАТЬ_И_ДОБАВИТЬ.EXE</button>
+                    </div>
+                  </form>
+                </div>
               </div>
-              <div class="form-text text-secondary mono smaller mt-2">Поддерживаются PDF, JPG, PNG, DOCX (макс. 10МБ)</div>
-            </form>
+            </div>
+            <div class="modal-footer border-secondary border-opacity-25">
+              <button type="button" class="btn btn-outline-secondary mono" data-bs-dismiss="modal">ЗАКРЫТЬ</button>
+            </div>
           </div>
         </div>
       </div>
+
+      <!-- Модалка: редактирование позиции (детали / материалы / доп. работы) -->
+      <div class="modal fade" id="editOrderLineModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content bg-dark neon-border-blue">
+            <div class="modal-header border-secondary border-opacity-25">
+              <h5 class="modal-title mono text-white">РЕДАКТИРОВАНИЕ_ПОЗИЦИИ</h5>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <p id="eol-status" class="text-danger mono small mb-3 d-none"></p>
+              <div class="mb-3">
+                <label class="form-label mono text-secondary small">НАИМЕНОВАНИЕ</label>
+                <input type="text" id="eol-title" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" autocomplete="off">
+              </div>
+              <div id="eol-inv-fields" class="row g-3">
+                <div class="col-md-4">
+                  <label class="form-label mono text-secondary small">КОЛ-ВО</label>
+                  <input type="number" id="eol-quantity" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" step="0.01" min="0.01">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label mono text-secondary small">ЕД.ИЗМ</label>
+                  <input type="text" id="eol-unit" class="form-control bg-dark text-white border-secondary border-opacity-50 mono">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label mono text-secondary small">ЦЕНА (РУБ)</label>
+                  <input type="number" id="eol-price" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" min="0">
+                </div>
+              </div>
+              <div id="eol-addwork-fields" class="row g-3 d-none">
+                <div class="col-md-6">
+                  <label class="form-label mono text-secondary small">СУММА (РУБ)</label>
+                  <input type="number" id="eol-aw-price" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" min="0">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label mono text-secondary small">КОММЕНТАРИЙ</label>
+                  <input type="text" id="eol-aw-comment" class="form-control bg-dark text-white border-secondary border-opacity-50 mono">
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer border-secondary border-opacity-25">
+              <button type="button" class="btn btn-outline-secondary mono" data-bs-dismiss="modal">ОТМЕНА</button>
+              <button type="button" id="eol-save" class="btn btn-info mono">СОХРАНИТЬ.EXE</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        (function () {
+          const csrfToken = '{{ csrf_token() }}';
+          const addDetailUrl  = '{{ url_for("admin.work_order_detail_add_json", order_id=order.id) }}';
+          const addMaterialUrl = '{{ url_for("admin.work_order_material_add_json", order_id=order.id) }}';
+          const detailUpdateTpl  = '{{ url_for("admin.work_order_detail_update_json", order_id=order.id, detail_id=0) }}';
+          const partUpdateTpl    = '{{ url_for("admin.work_order_part_update_json", order_id=order.id, part_id=0) }}';
+          const materialUpdateTpl = '{{ url_for("admin.work_order_material_update_json", order_id=order.id, material_id=0) }}';
+          const awUpdateTpl      = '{{ url_for("admin.work_order_additional_work_update_json", order_id=order.id, row_id=0) }}';
+          const detailDeleteTpl  = '{{ url_for("admin.work_order_detail_delete", order_id=order.id, detail_id=0) }}';
+          const partDeleteTpl    = '{{ url_for("admin.work_order_part_delete", order_id=order.id, part_id=0) }}';
+          const materialDeleteTpl = '{{ url_for("admin.work_order_material_delete", order_id=order.id, material_id=0) }}';
+
+          const searchInput  = document.getElementById('pm-search');
+          const statusEl     = document.getElementById('pm-status');
+          const itemButtons  = Array.from(document.querySelectorAll('#addInventoryModal .pm-item'));
+          const groupEls     = Array.from(document.querySelectorAll('#addInventoryModal .pm-group'));
+          const tbodyDetails  = document.getElementById('order-details-tbody');
+          const tbodyMaterials = document.getElementById('order-materials-tbody');
+          const emptyRowDetails = document.getElementById('order-details-empty-row');
+          const emptyRowMaterials = document.getElementById('order-materials-empty-row');
+          const totalInput   = document.getElementById('total_amount');
+          const totalDisplay = document.getElementById('total_display');
+
+          function updateTotalDisplay(val) {
+            if (totalInput) totalInput.value = String(val);
+            if (totalDisplay) totalDisplay.textContent = String(val) + ' руб.';
+          }
+          const openDetailsBtn  = document.getElementById('open-add-details');
+          const openMaterialsBtn = document.getElementById('open-add-materials');
+
+          let currentKind = 'detail';
+
+          function getAddUrl(kind) {
+            return kind === 'material' ? addMaterialUrl : addDetailUrl;
+          }
+
+          function getTbody(kind) {
+            return kind === 'material' ? tbodyMaterials : tbodyDetails;
+          }
+
+          function getEmptyRow(kind) {
+            return kind === 'material' ? emptyRowMaterials : emptyRowDetails;
+          }
+
+          function getDeleteUrl(kind, id) {
+            if (kind === 'material') return materialDeleteTpl.replace(/\/0$/, '/' + id);
+            if (kind === 'part')     return partDeleteTpl.replace(/\/0$/, '/' + id);
+            return detailDeleteTpl.replace(/\/0$/, '/' + id);
+          }
+
+          function getUpdateUrl(kind, id) {
+            if (kind === 'material')       return materialUpdateTpl.replace(/\/0$/, '/' + id);
+            if (kind === 'part')           return partUpdateTpl.replace(/\/0$/, '/' + id);
+            if (kind === 'additional_work') return awUpdateTpl.replace(/\/0$/, '/' + id);
+            return detailUpdateTpl.replace(/\/0$/, '/' + id);
+          }
+
+          function ensureNotEmpty(kind) {
+            const r = getEmptyRow(kind);
+            if (r && r.parentNode) r.parentNode.removeChild(r);
+          }
+
+          function escHtml(s) {
+            return String(s === undefined || s === null ? '' : s).replace(
+              /[&<>"']/g,
+              (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
+            );
+          }
+
+          function appendInventoryRow(kind, itemId, title, quantity, unit, price, total) {
+            const tbody = getTbody(kind);
+            if (!tbody) return;
+            const tr = document.createElement('tr');
+            const deleteUrl = getDeleteUrl(kind, itemId);
+            const payload = { id: itemId, title: String(title), quantity, unit: String(unit), price: Number(price) };
+            const enc = encodeURIComponent(JSON.stringify(payload));
+            tr.innerHTML = `
+              <td class="ps-4">> ${escHtml(title)}</td>
+              <td>${escHtml(quantity)} ${escHtml(unit)}</td>
+              <td>${escHtml(price)} РУБ.</td>
+              <td class="neon-text-blue">${escHtml(total)} РУБ.</td>
+              <td class="text-end pe-4">
+                <button type="button" class="btn btn-sm btn-outline-primary border-0 pm-edit-line" data-kind="${kind}" data-line-enc="${enc}">
+                  <i class="bi bi-pencil"></i>
+                </button>
+                <form action="${deleteUrl}" method="POST" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="${csrfToken}">
+                  <button type="submit" class="btn btn-sm btn-outline-danger border-0"><i class="bi bi-trash"></i></button>
+                </form>
+              </td>`;
+            tbody.appendChild(tr);
+          }
+
+          async function postJson(url, payload) {
+            const res = await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+              body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!res.ok || !data.ok) throw new Error(data.message || 'Ошибка');
+            return data;
+          }
+
+          itemButtons.forEach((btn) => {
+            btn.addEventListener('click', async () => {
+              try {
+                setStatus('ДОБАВЛЕНИЕ...', false);
+                const kind = btn.dataset.kind || 'detail';
+                const data = await postJson(getAddUrl(kind), {
+                  title: btn.dataset.title,
+                  unit: btn.dataset.unit,
+                  price: Number(btn.dataset.price || 0),
+                  quantity: 1
+                });
+                if (!data.already) {
+                  ensureNotEmpty(kind);
+                  const id = data.detail_id ?? data.material_id;
+                  appendInventoryRow(kind, id, data.title, data.quantity, data.unit, data.price, data.total);
+                  updateTotalDisplay(data.order_total);
+                  setStatus('ДОБАВЛЕНО.OK', false);
+                } else {
+                  setStatus('УЖЕ_ЕСТЬ', true);
+                }
+                setTimeout(() => setStatus('', false), 900);
+              } catch (e) { setStatus(e.message || 'Ошибка', true); }
+            });
+          });
+
+          const createForm = document.getElementById('pm-create-form');
+          if (createForm) {
+            createForm.addEventListener('submit', async (e) => {
+              e.preventDefault();
+              const fd = new FormData(createForm);
+              try {
+                setStatus('ДОБАВЛЕНИЕ...', false);
+                const data = await postJson(getAddUrl(currentKind), {
+                  title: fd.get('title'),
+                  unit: fd.get('unit'),
+                  price: Number(fd.get('price') || 0),
+                  quantity: Number(fd.get('quantity') || 1)
+                });
+                if (!data.already) {
+                  ensureNotEmpty(currentKind);
+                  const id = data.detail_id ?? data.material_id;
+                  appendInventoryRow(currentKind, id, data.title, data.quantity, data.unit, data.price, data.total);
+                  updateTotalDisplay(data.order_total);
+                  setStatus('ДОБАВЛЕНО.OK', false);
+                } else { setStatus('УЖЕ_ЕСТЬ', true); }
+                setTimeout(() => setStatus('', false), 900);
+              } catch (err) { setStatus(err.message || 'Ошибка', true); }
+            });
+          }
+
+          function setStatus(text, isError) {
+            if (!statusEl) return;
+            statusEl.textContent = text || '';
+            statusEl.classList.toggle('text-danger', !!isError);
+            statusEl.classList.toggle('text-secondary', !isError);
+          }
+
+          function refreshVisibility() {
+            const q = (searchInput ? searchInput.value : '').trim().toLowerCase();
+            let shown = 0;
+            itemButtons.forEach((btn) => {
+              const ok = !q || (btn.dataset.search || '').includes(q);
+              btn.style.display = ok ? '' : 'none';
+              if (ok) shown += 1;
+            });
+            groupEls.forEach((g) => {
+              g.style.display = g.querySelectorAll('.pm-item:not([style*="display: none"])').length > 0 ? '' : 'none';
+            });
+            setStatus(q ? `НАЙДЕНО: ${shown}` : '');
+          }
+
+          if (searchInput) {
+            searchInput.addEventListener('input', refreshVisibility);
+            refreshVisibility();
+          }
+
+          function openFor(kind) {
+            currentKind = kind;
+            if (kind === 'material') {
+              document.getElementById('inv-tab-materials')?.click();
+            } else {
+              document.getElementById('inv-tab-details')?.click();
+            }
+            if (searchInput) searchInput.value = '';
+            refreshVisibility();
+            setStatus('', false);
+          }
+
+          if (openDetailsBtn)  openDetailsBtn.addEventListener('click', () => openFor('detail'));
+          if (openMaterialsBtn) openMaterialsBtn.addEventListener('click', () => openFor('material'));
+
+          /* ---- Редактирование позиции ---- */
+          const modalEl   = document.getElementById('editOrderLineModal');
+          const titleIn   = document.getElementById('eol-title');
+          const qtyIn     = document.getElementById('eol-quantity');
+          const unitIn    = document.getElementById('eol-unit');
+          const priceIn   = document.getElementById('eol-price');
+          const awPriceIn  = document.getElementById('eol-aw-price');
+          const awCommentIn = document.getElementById('eol-aw-comment');
+          const invFields = document.getElementById('eol-inv-fields');
+          const awFields  = document.getElementById('eol-addwork-fields');
+          const eolStatus = document.getElementById('eol-status');
+          const saveBtn   = document.getElementById('eol-save');
+          let activeBtn = null, activeKind = 'detail';
+          let modalInstance = null;
+
+          function readPayload(btn) {
+            const enc = btn.getAttribute('data-line-enc');
+            if (enc) return JSON.parse(decodeURIComponent(enc));
+            const raw = btn.getAttribute('data-line');
+            return raw ? JSON.parse(raw) : null;
+          }
+
+          function hideEolError() { eolStatus.textContent = ''; eolStatus.classList.add('d-none'); }
+          function showEolError(m) { eolStatus.textContent = m || ''; eolStatus.classList.toggle('d-none', !m); }
+
+          document.body.addEventListener('click', (e) => {
+            const b = e.target.closest('.pm-edit-line');
+            if (!b) return;
+            e.preventDefault();
+            const line = readPayload(b);
+            if (!line) return;
+            activeBtn = b;
+            activeKind = b.getAttribute('data-kind') || 'detail';
+            hideEolError();
+            titleIn.value = line.title || '';
+            const isAw = activeKind === 'additional_work';
+            invFields.classList.toggle('d-none', isAw);
+            awFields.classList.toggle('d-none', !isAw);
+            if (isAw) {
+              awPriceIn.value = line.price != null ? String(line.price) : '0';
+              awCommentIn.value = line.comment || '';
+            } else {
+              qtyIn.value  = line.quantity != null ? String(line.quantity) : '1';
+              unitIn.value = line.unit || '';
+              priceIn.value = line.price != null ? String(line.price) : '0';
+            }
+            if (!modalInstance && modalEl && window.bootstrap) modalInstance = new bootstrap.Modal(modalEl);
+            if (modalInstance) modalInstance.show();
+          });
+
+          if (saveBtn) {
+            saveBtn.addEventListener('click', async () => {
+              if (!activeBtn) return;
+              const line = readPayload(activeBtn);
+              if (!line) return;
+              hideEolError();
+              saveBtn.disabled = true;
+              try {
+                const isAw = activeKind === 'additional_work';
+                let payload;
+                if (isAw) {
+                  const p = parseInt(String(awPriceIn.value || ''), 10);
+                  if (!titleIn.value.trim()) { showEolError('Укажите наименование.'); return; }
+                  if (Number.isNaN(p) || p < 0) { showEolError('Укажите корректную сумму.'); return; }
+                  payload = { title: titleIn.value.trim(), price: p, comment: awCommentIn.value.trim() };
+                } else {
+                  const qty = parseFloat(String(qtyIn.value || '').replace(',', '.'));
+                  const pr  = parseInt(String(priceIn.value || ''), 10);
+                  if (!titleIn.value.trim()) { showEolError('Укажите наименование.'); return; }
+                  if (!(qty > 0)) { showEolError('Количество должно быть больше нуля.'); return; }
+                  if (Number.isNaN(pr) || pr < 0) { showEolError('Укажите корректную цену.'); return; }
+                  payload = { title: titleIn.value.trim(), quantity: qty, unit: (unitIn.value.trim() || 'шт.'), price: pr };
+                }
+                const url = getUpdateUrl(activeKind, line.id);
+                const data = await postJson(url, payload);
+                /* обновляем строку таблицы */
+                const tr = activeBtn.closest('tr');
+                if (tr) {
+                  if (isAw) {
+                    tr.cells[0].textContent = '> ' + data.title;
+                    tr.cells[1].textContent = data.price + ' РУБ.';
+                    tr.cells[2].textContent = data.comment || '';
+                  } else {
+                    tr.cells[0].textContent = '> ' + data.title;
+                    tr.cells[1].textContent = data.quantity + ' ' + data.unit;
+                    tr.cells[2].textContent = data.price + ' РУБ.';
+                    tr.cells[3].textContent = data.total + ' РУБ.';
+                  }
+                  const nextId = data.detail_id ?? data.material_id ?? data.part_id ?? data.additional_work_id;
+                  const nextPayload = isAw
+                    ? { id: nextId, title: data.title, price: data.price, comment: data.comment || '' }
+                    : { id: nextId, title: data.title, quantity: data.quantity, unit: data.unit, price: data.price };
+                  activeBtn.setAttribute('data-kind', activeKind);
+                  activeBtn.setAttribute('data-line', JSON.stringify(nextPayload));
+                  activeBtn.removeAttribute('data-line-enc');
+                }
+                if (data.order_total != null) updateTotalDisplay(data.order_total);
+                if (modalInstance) modalInstance.hide();
+              } catch (err) {
+                showEolError(err.message || 'Ошибка');
+              } finally {
+                saveBtn.disabled = false;
+              }
+            });
+          }
+        })();
+      </script>
+
+      {# документы перенесены рядом с фотоотчётом выше #}
     </div>
 
     <!-- Metadata & Actions (Right Column) -->
@@ -411,17 +1122,57 @@
         <div class="card-header border-secondary border-opacity-25 bg-transparent py-3">
           <h5 class="card-title m-0 mono text-white small"><i class="bi bi-currency-dollar me-2"></i>ИТОГО_К_ОПЛАТЕ</h5>
         </div>
-        <div class="card-body p-4 text-center">
+        <div class="card-body p-4">
           <div class="mb-4">
             <label class="form-label mono text-secondary small d-block mb-1">> ТЕКУЩИЙ_СТАТУС</label>
-            {{ form.status(class="form-select bg-dark text-white border-secondary border-opacity-50 mono text-center") }}
+            {{ form.status(class="form-select bg-dark text-white border-secondary border-opacity-50 mono") }}
           </div>
-          
-          <div class="mb-4">
-            <label class="form-label mono text-secondary small d-block mb-1">> СУММА (РУБ.)</label>
-            {{ form.total_amount(class="form-control bg-dark text-white border-secondary border-opacity-50 mono text-center fs-3 fw-bold neon-text-blue", type="number") }}
-            <div class="form-text text-secondary mono smaller mt-2">Сумма пересчитывается автоматически при добавлении позиций</div>
+
+          <!-- Разбивка по группам -->
+          {% set ns = namespace(works=0, addworks=0, details=0, materials=0) %}
+          {% for item in order.items %}{% set ns.works = ns.works + (item.price or 0) %}{% endfor %}
+          {% for aw in order.additional_works %}{% set ns.addworks = ns.addworks + (aw.price or 0) %}{% endfor %}
+          {% for _, r in merged_inventory_rows %}{% set ns.details = ns.details + ((r.price or 0) * (r.quantity or 0))|int %}{% endfor %}
+          {% for m in selected_materials_list %}{% set ns.materials = ns.materials + ((m.price or 0) * (m.quantity or 0))|int %}{% endfor %}
+          {% set grand_total = (ns.works + ns.addworks + ns.details + ns.materials)|int %}
+
+          <div class="mb-3">
+            <table class="table table-dark table-sm mb-0 mono small">
+              <tbody>
+                {% if ns.works %}
+                <tr class="border-secondary border-opacity-10">
+                  <td class="text-secondary ps-0">Работы</td>
+                  <td class="text-end text-white pe-0">{{ ns.works | int }} руб.</td>
+                </tr>
+                {% endif %}
+                {% if ns.addworks %}
+                <tr class="border-secondary border-opacity-10">
+                  <td class="text-secondary ps-0">Доп. работы</td>
+                  <td class="text-end text-white pe-0">{{ ns.addworks | int }} руб.</td>
+                </tr>
+                {% endif %}
+                {% if ns.details %}
+                <tr class="border-secondary border-opacity-10">
+                  <td class="text-secondary ps-0">Детали</td>
+                  <td class="text-end text-white pe-0">{{ ns.details | int }} руб.</td>
+                </tr>
+                {% endif %}
+                {% if ns.materials %}
+                <tr class="border-secondary border-opacity-10">
+                  <td class="text-secondary ps-0">Материалы</td>
+                  <td class="text-end text-white pe-0">{{ ns.materials | int }} руб.</td>
+                </tr>
+                {% endif %}
+                <tr class="border-top border-secondary border-opacity-50">
+                  <td class="text-secondary fw-bold ps-0">ИТОГО</td>
+                  <td class="text-end fw-bold neon-text-blue fs-5 pe-0" id="total_display">{{ grand_total }} руб.</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
+
+          <!-- Скрытое поле с суммой (для сохранения в форме) -->
+          <input type="hidden" name="total_amount" value="{{ grand_total }}" id="total_amount">
 
           <button type="submit" class="btn btn-info w-100 py-3 mono fw-bold">
             <i class="bi bi-save me-2"></i>ОБНОВИТЬ_СТАТУС.EXE
@@ -444,11 +1195,14 @@
             <span class="text-secondary d-block mb-1">> ИСПОЛНИТЕЛЬ (МАСТЕР):</span>
             <div class="ps-2 text-white fw-bold">{{ order.master.name }}</div>
           </div>
-          {% if order.appointment and order.appointment.car_make %}
+          {% if order.appointment and (order.appointment.car_make or order.appointment.win_number) %}
           <div class="mb-3">
             <span class="text-secondary d-block mb-1">> ОБЪЕКТ:</span>
+            {% if order.appointment.car_make %}
             <div class="ps-2 text-white fw-bold">{{ order.appointment.car_make }} {{ order.appointment.car_model }}</div>
             <div class="ps-2 text-secondary smaller">{{ order.appointment.car_number }}</div>
+            {% endif %}
+            {% if order.appointment.win_number %}<div class="ps-2 text-secondary smaller mono">WIN: {{ order.appointment.win_number }}</div>{% endif %}
           </div>
           {% endif %}
           <hr class="border-secondary border-opacity-25">

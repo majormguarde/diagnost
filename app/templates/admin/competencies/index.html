@@ -3,10 +3,10 @@
 <div class="container-fluid py-4">
   <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
     <div>
-      <span class="badge neon-border-blue text-white mono mb-2">SPECIALIZATIONS_DB.EXE</span>
-      <h1 class="h2 m-0 neon-text-blue mono">[ СПРАВОЧНИК СПЕЦИАЛИЗАЦИЙ ]</h1>
+      <span class="badge neon-border-blue text-white mono mb-2">SECTIONS_DB.EXE</span>
+      <h1 class="h2 m-0 neon-text-blue mono">СПРАВОЧНИК УЧАСТКОВ</h1>
     </div>
-    <a href="{{ url_for('admin.competency_edit') }}" class="btn btn-outline-info mono">/добавить_специализацию</a>
+    <a href="{{ url_for('admin.competency_edit') }}" class="btn btn-outline-info mono">/добавить_участок</a>
   </div>
 
   <div class="card bg-dark neon-border-blue shadow-lg">
@@ -16,7 +16,7 @@
           <thead class="text-secondary border-secondary border-opacity-25">
             <tr>
               <th class="ps-4">ID</th>
-              <th>НАЗВАНИЕ_СПЕЦИАЛИЗАЦИИ</th>
+              <th>НАЗВАНИЕ_УЧАСТКА</th>
               <th class="text-end pe-4">ДЕЙСТВИЯ</th>
             </tr>
           </thead>
@@ -30,7 +30,7 @@
                     <a href="{{ url_for('admin.competency_edit', competency_id=comp.id) }}" class="btn btn-sm btn-outline-info mono">
                       EDIT.CFG
                     </a>
-                    <form action="{{ url_for('admin.competency_delete', competency_id=comp.id) }}" method="POST" onsubmit="return confirm('Удалить специализацию?')">
+                    <form action="{{ url_for('admin.competency_delete', competency_id=comp.id) }}" method="POST" onsubmit="return confirm('Удалить участок?')">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <button type="submit" class="btn btn-sm btn-outline-danger mono">DELETE.EXE</button>
                     </form>
@@ -41,7 +41,7 @@
               <tr>
                 <td colspan="3" class="text-center py-5 text-secondary">
                   <i class="bi bi-folder-x fs-1 d-block mb-3 opacity-25"></i>
-                  <span class="text-secondary">СПЕЦИАЛИЗАЦИИ_ОТСУТСТВУЮТ.NULL</span>
+                  <span class="text-secondary">УЧАСТКИ_ОТСУТСТВУЮТ.NULL</span>
                 </td>
               </tr>
             {% endfor %}

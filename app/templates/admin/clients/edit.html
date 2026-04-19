@@ -1,0 +1,89 @@
+{% extends "admin/admin_base.html" %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+    <div>
+      <span class="badge neon-border-blue text-white mono mb-2">CLIENT_PROFILE_EDITOR.EXE</span>
+      <h1 class="h2 m-0 neon-text-blue mono">[ РЕДАКТИРОВАТЬ КЛИЕНТА ]</h1>
+    </div>
+    <a href="{{ url_for('admin.clients') }}" class="btn btn-outline-info mono">/назад_к_списку</a>
+  </div>
+
+  <div class="card bg-dark neon-border-blue shadow-lg">
+    <div class="card-body p-4">
+      <form method="POST" class="mono">
+        {{ form.hidden_tag() }}
+
+        <div class="row">
+          <div class="col-md-6 mb-4">
+            <label class="form-label text-secondary small">> ИМЯ КЛИЕНТА</label>
+            {{ form.name(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Имя клиента") }}
+            {% for error in form.name.errors %}<span class="text-danger small">{{ error }}</span>{% endfor %}
+          </div>
+          <div class="col-md-6 mb-4">
+            <label class="form-label text-secondary small">> ЛОГИН (ТЕЛЕФОН)</label>
+            {{ form.phone(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="+7...") }}
+            {% for error in form.phone.errors %}<span class="text-danger small">{{ error }}</span>{% endfor %}
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col-md-4 mb-4">
+            <label class="form-label text-secondary small">> WHATSAPP</label>
+            {{ form.client_whatsapp(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Номер для wa.me") }}
+            {% for error in form.client_whatsapp.errors %}<span class="text-danger small">{{ error }}</span>{% endfor %}
+          </div>
+          <div class="col-md-4 mb-4">
+            <label class="form-label text-secondary small">> TELEGRAM</label>
+            {{ form.client_telegram(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="ник без @") }}
+            {% for error in form.client_telegram.errors %}<span class="text-danger small">{{ error }}</span>{% endfor %}
+          </div>
+          <div class="col-md-4 mb-4">
+            <label class="form-label text-secondary small">> EMAIL</label>
+            {{ form.client_email(class="form-control bg-dark text-white border-secondary border-opacity-50 mono") }}
+            {% for error in form.client_email.errors %}<span class="text-danger small">{{ error }}</span>{% endfor %}
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col-md-6 mb-4">
+            <label class="form-label text-secondary small">> НОВЫЙ ПАРОЛЬ</label>
+            {{ form.password(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Оставьте пустым, чтобы не менять") }}
+            {% for error in form.password.errors %}<span class="text-danger small">{{ error }}</span>{% endfor %}
+          </div>
+          <div class="col-md-6 mb-4">
+            <label class="form-label text-secondary small">> ПОДТВЕРЖДЕНИЕ ПАРОЛЯ</label>
+            {{ form.password_confirm(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Повторите новый пароль") }}
+            {% for error in form.password_confirm.errors %}<span class="text-danger small">{{ error }}</span>{% endfor %}
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <div class="form-check">
+            {{ form.is_active(class="form-check-input bg-dark border-secondary") }}
+            {{ form.is_active.label(class="form-check-label text-white small") }}
+            {% for error in form.is_active.errors %}<span class="text-danger small d-block">{{ error }}</span>{% endfor %}
+          </div>
+        </div>
+
+        <div class="border-top border-secondary border-opacity-25 pt-4 mt-2">
+          <div class="text-secondary small mb-3">
+            Дата регистрации: {{ client.created_at.strftime('%d.%m.%Y %H:%M') }}
+          </div>
+          <div class="text-secondary small mb-3">
+            Логин клиента используется для входа в систему. В текущей конфигурации это телефон.
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-info px-4 py-2 fw-bold">
+              <i class="bi bi-save me-2"></i>SAVE.EXE
+            </button>
+            <a href="{{ url_for('admin.clients') }}" class="btn btn-outline-secondary px-4 py-2">
+              CANCEL.SH
+            </a>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -97,6 +97,7 @@
                     <tr><th>Телефон:</th><td>{{ order.client.phone }}</td></tr>
                     <tr><th>Автомобиль:</th><td>{{ order.appointment.car_make if order.appointment else '---' }} {{ order.appointment.car_model if order.appointment else '' }}</td></tr>
                     <tr><th>Гос.номер:</th><td>{{ order.appointment.car_number if order.appointment else '---' }}</td></tr>
+                    <tr><th>WIN номер:</th><td>{{ order.appointment.win_number if order.appointment and order.appointment.win_number else '---' }}</td></tr>
                 </table>
             </div>
         </div>
@@ -138,8 +139,32 @@
             </tbody>
         </table>
 
-        {% if order.parts %}
-        <div class="section-title">ЗАПЧАСТИ И МАТЕРИАЛЫ</div>
+        {% if order.additional_works %}
+        <div class="section-title">ДОПОЛНИТЕЛЬНЫЕ РАБОТЫ (СТОРОННИЕ ИСПОЛНИТЕЛИ)</div>
+        <table class="table table-sm table-items">
+            <thead>
+                <tr>
+                    <th class="ps-3">№</th>
+                    <th>Наименование</th>
+                    <th class="text-end pe-3">Сумма (руб.)</th>
+                    <th>Комментарий</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for aw in order.additional_works %}
+                <tr>
+                    <td class="ps-3">{{ loop.index }}</td>
+                    <td>{{ aw.title }}</td>
+                    <td class="text-end pe-3">{{ "{:,.0f}".format(aw.price).replace(',', ' ') }}</td>
+                    <td class="text-muted small">{{ aw.comment or '' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        {% if merged_inventory_rows %}
+        <div class="section-title">ДЕТАЛИ</div>
         <table class="table table-sm table-items">
             <thead>
                 <tr>
@@ -151,13 +176,39 @@
                 </tr>
             </thead>
             <tbody>
-                {% for part in order.parts %}
+                {% for _, inv_row in merged_inventory_rows %}
                 <tr>
                     <td class="ps-3">{{ loop.index }}</td>
-                    <td>{{ part.title }}</td>
-                    <td class="text-center">{{ part.quantity }} {{ part.unit }}</td>
-                    <td class="text-end">{{ "{:,.0f}".format(part.price).replace(',', ' ') }}</td>
-                    <td class="text-end pe-3">{{ "{:,.0f}".format(part.price * part.quantity).replace(',', ' ') }}</td>
+                    <td>{{ inv_row.title }}</td>
+                    <td class="text-center">{{ inv_row.quantity }} {{ inv_row.unit }}</td>
+                    <td class="text-end">{{ "{:,.0f}".format(inv_row.price).replace(',', ' ') }}</td>
+                    <td class="text-end pe-3">{{ "{:,.0f}".format(inv_row.price * inv_row.quantity).replace(',', ' ') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        {% if selected_materials_list %}
+        <div class="section-title">МАТЕРИАЛЫ</div>
+        <table class="table table-sm table-items">
+            <thead>
+                <tr>
+                    <th class="ps-3">№</th>
+                    <th>Наименование</th>
+                    <th class="text-center">Кол-во</th>
+                    <th class="text-end">Цена (руб.)</th>
+                    <th class="text-end pe-3">Сумма (руб.)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in selected_materials_list %}
+                <tr>
+                    <td class="ps-3">{{ loop.index }}</td>
+                    <td>{{ item.title }}</td>
+                    <td class="text-center">{{ item.quantity }} {{ item.unit }}</td>
+                    <td class="text-end">{{ "{:,.0f}".format(item.price).replace(',', ' ') }}</td>
+                    <td class="text-end pe-3">{{ "{:,.0f}".format(item.price * item.quantity).replace(',', ' ') }}</td>
                 </tr>
                 {% endfor %}
             </tbody>

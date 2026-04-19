@@ -30,19 +30,19 @@
            <div class="banner-overlay"></div>
            <div class="carousel-caption">
              <div class="container-fluid p-0">
-               <span class="badge badge-tech mb-3 mono animate__animated animate__fadeInDown">СИСТЕМА_ОБНАРУЖЕНА: {{ banner.title|upper if banner.title else 'БАННЕР' }}</span>
-               <h1 class="animate__animated animate__fadeInLeft">{{ banner.title or 'ПЕРЕДОВАЯ ДИАГНОСТИКА' }}</h1>
-               <p class="animate__animated animate__fadeInUp">
-                 {% if banner.subtitle %}
-                   {{ banner.subtitle }}
-                 {% else %}
-                   Инициализация систем сканирования...
-                 {% endif %}
-               </p>
+               <span class="badge badge-tech mb-3 mono animate__animated animate__fadeInDown">{{ banner.title or 'Диагностика и автоэлектрика' }}</span>
+              <h1 class="animate__animated animate__fadeInLeft">{{ banner.title or 'Профессиональная диагностика автомобиля' }}</h1>
+              <p class="animate__animated animate__fadeInUp">
+                {% if banner.subtitle %}
+                  {{ banner.subtitle }}
+                {% else %}
+                  Точно находим причину неисправности и предлагаем понятный план работ.
+                {% endif %}
+              </p>
                <div class="mt-4 animate__animated animate__fadeInUp animate__delay-1s">
                  <a href="{{ banner.link or url_for('booking.step1') }}" class="btn btn-neon btn-lg px-5 py-3 mono">
-                   [ {{ 'ПЕРЕЙТИ.EXE' if banner.link else 'ОСТАВИТЬ_ЗАЯВКУ.EXE' }} ]
-                 </a>
+                  {{ 'Подробнее' if banner.link else 'Записаться онлайн' }}
+                </a>
                </div>
              </div>
            </div>
@@ -66,15 +66,15 @@
   <div class="container hero-content">
     <div class="row align-items-center">
       <div class="col-lg-7">
-        <span class="badge badge-tech mb-3 mono">СТАТУС_СИСТЕМЫ: ОНЛАЙН</span>
-        <h1 class="hero-title">ПЕРЕДОВАЯ ДИАГНОСТИКА АВТО</h1>
-        <p class="lead text-white opacity-90 mb-5 fs-4 mono">> Инициализация систем сканирования...<br>> Обнаружение неисправностей: 100% точность.<br>> Доступ к дилерским базам: Разрешен.</p>
+        <span class="badge badge-tech mb-3 mono">Автосервис полного цикла</span>
+        <h1 class="hero-title">Точная диагностика и ремонт автоэлектрики</h1>
+        <p class="lead text-white opacity-90 mb-5 fs-4 mono">Проводим диагностику, объясняем причину неисправности и выполняем ремонт с гарантией.</p>
         <div class="d-flex flex-wrap gap-3">
           <a href="{{ url_for('booking.step1') }}" class="btn btn-neon btn-lg px-5 py-3 mono">
-            [ ОСТАВИТЬ_ЗАЯВКУ.EXE ]
+            Записаться
           </a>
           <a href="{{ url_for('public.services') }}" class="btn btn-outline-info btn-lg px-5 py-3 mono" style="border-radius: 0; border-width: 2px;">
-            /посмотреть_услуги
+            Услуги и цены
           </a>
         </div>
       </div>
@@ -95,25 +95,25 @@
     <div class="col-md-3 col-6">
       <div class="feature-card text-center p-4">
         <h2 class="neon-text-blue mb-0 fw-bold mono">{{ active_masters_count }}+</h2>
-        <p class="text-secondary small mb-0 mono">АКТИВНЫХ_МАСТЕРОВ</p>
+        <p class="text-secondary small mb-0 mono">Активных мастеров</p>
       </div>
     </div>
     <div class="col-md-3 col-6">
       <div class="feature-card text-center p-4">
         <h2 class="neon-text-blue mb-0 fw-bold mono">{{ active_works_count }}+</h2>
-        <p class="text-secondary small mb-0 mono">СПЕЦИАЛИЗАЦИЙ</p>
+        <p class="text-secondary small mb-0 mono">Специализаций</p>
       </div>
     </div>
     <div class="col-md-3 col-6">
       <div class="feature-card text-center p-4">
         <h2 class="neon-text-blue mb-0 fw-bold mono">{{ reviews_count }}+</h2>
-        <p class="text-secondary small mb-0 mono">ОТЗЫВОВ</p>
+        <p class="text-secondary small mb-0 mono">Отзывов</p>
       </div>
     </div>
     <div class="col-md-3 col-6">
       <div class="feature-card text-center p-4">
         <h2 class="neon-text-blue mb-0 fw-bold mono">{{ "%.1f"|format(avg_rating) }}</h2>
-        <p class="text-secondary small mb-0 mono">СРЕДНЯЯ_ОЦЕНКА</p>
+        <p class="text-secondary small mb-0 mono">Средняя оценка</p>
       </div>
     </div>
   </div>
@@ -123,9 +123,9 @@
 <section class="py-5 mt-5 scanline-container">
   <div class="container">
     <div class="text-center mb-5">
-      <span class="badge badge-tech mb-3 mono">ОСНОВНЫЕ_МОДУЛИ</span>
-      <h2 class="section-title mono">ВОЗМОЖНОСТИ</h2>
-      <p class="text-secondary mono">Высокотехнологичные протоколы для сложных задач</p>
+      <span class="badge badge-tech mb-3 mono">Наши преимущества</span>
+      <h2 class="section-title mono">Почему выбирают нас</h2>
+      <p class="text-secondary mono">Понятный сервис, точная диагностика и прозрачные условия</p>
     </div>
     
     <div class="row g-4">
@@ -134,8 +134,8 @@
           <div class="icon-box">
             <i class="bi bi-search"></i>
           </div>
-          <h3 class="mono h4">ГЛУБОКИЙ_СКАН</h3>
-          <p class="text-white opacity-75 mb-0 small mono">Комплексная компьютерная диагностика всех электронных модулей автомобиля.</p>
+          <h3 class="mono h4">Точная диагностика</h3>
+          <p class="text-white opacity-75 mb-0 small mono">Проверяем электронные системы и быстро находим причину неисправности.</p>
         </div>
       </div>
       <div class="col-md-4">
@@ -282,6 +282,73 @@
 {% endif %}
 
 <style>
+  .homepage-clean .feature-card {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 24px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+    padding: 2rem;
+  }
+  .homepage-clean .feature-card::before {
+    display: none;
+  }
+  .homepage-clean .feature-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(255, 255, 255, 0.24);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.24);
+  }
+  .homepage-clean .icon-box {
+    width: 64px;
+    height: 64px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: none;
+    margin-bottom: 1.5rem;
+  }
+  .homepage-clean .feature-card:hover .icon-box {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--neon-blue);
+    box-shadow: none;
+  }
+  .homepage-clean .section-title::before,
+  .homepage-clean .section-title::after {
+    content: none;
+  }
+  .homepage-clean .section-title {
+    margin-bottom: 1rem;
+    letter-spacing: 0.02em;
+  }
+  .homepage-clean .badge-tech {
+    border-radius: 999px;
+    border-color: rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.88);
+    letter-spacing: 0.04em;
+    padding: 0.55rem 1rem;
+  }
+  .homepage-clean .btn-neon {
+    clip-path: none;
+    border-radius: 999px;
+    letter-spacing: 0.04em;
+    border-color: rgba(0, 243, 255, 0.65);
+  }
+  .homepage-clean .btn-outline-info {
+    border-radius: 999px !important;
+    border-color: rgba(255, 255, 255, 0.22) !important;
+    color: #fff !important;
+  }
+  .homepage-clean .btn-outline-info:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.32) !important;
+  }
+  .homepage-clean .text-secondary {
+    color: rgba(255, 255, 255, 0.68) !important;
+  }
+  .homepage-clean .border-top.border-secondary {
+    border-color: rgba(255, 255, 255, 0.12) !important;
+  }
   .mt-n5 {
     margin-top: -3rem !important;
   }
@@ -291,6 +358,10 @@
     }
     .mt-n5 {
       margin-top: -2rem !important;
+    }
+    .homepage-clean .feature-card {
+      border-radius: 20px;
+      padding: 1.5rem;
     }
   }
 </style>

@@ -5,80 +5,368 @@
   <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
     <div>
       <span class="badge neon-border-blue text-white mono mb-2">APPOINTMENT_DATA.CFG</span>
-      <h1 class="h2 m-0 neon-text-blue mono">[ ЗАЯВКА №{{ appointment.id }} ]</h1>
+      <h1 class="h2 m-0 neon-text-blue mono">ЗАЯВКА №{{ appointment.id }}</h1>
     </div>
     <a href="{{ url_for('admin.appointments') }}" class="btn btn-outline-info mono">/назад_к_списку</a>
   </div>
 
+  {% if client_user %}
+  <div class="card bg-dark neon-border-blue shadow-sm border border-secondary border-opacity-25 mb-4">
+    <div class="card-body py-3">
+      <div class="d-flex flex-column flex-md-row flex-wrap align-items-md-center justify-content-between gap-3">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <span class="text-secondary mono small text-uppercase">Клиент</span>
+          <span class="text-white fw-bold">{{ client_user.name }}</span>
+          <a href="tel:{{ client_user.phone | replace(' ', '') | replace('-', '') }}" class="btn btn-sm btn-outline-info mono">
+            <i class="bi bi-telephone me-1"></i>{{ client_user.phone }}
+          </a>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+          {% if client_wa_url %}
+          <a href="{{ client_wa_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-success mono" title="WhatsApp по номеру">
+            <i class="bi bi-whatsapp me-1"></i>WhatsApp
+          </a>
+          {% endif %}
+          {% if client_tg_url %}
+          <a href="{{ client_tg_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-info mono" title="Telegram по номеру телефона">
+            <i class="bi bi-telegram me-1"></i>Telegram
+          </a>
+          {% endif %}
+          {% if client_user.client_email %}
+          <form method="post" action="{{ url_for('admin.appointment_email_client', appointment_id=appointment.id) }}" class="d-inline" onsubmit="return confirm('Отправить письмо клиенту с сервера (SMTP из раздела «Связь»)?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-outline-light mono" title="Отправка через SMTP из «Связь»">
+              <i class="bi bi-envelope me-1"></i>Email
+            </button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="row g-4">
     <!-- Main Interactive Form (Left Column) -->
     <div class="col-lg-8">
-      <form method="POST" class="card bg-dark neon-border-blue shadow-lg mb-4">
+      <form method="POST" id="appointment-edit-form" class="mb-0">
         {{ form.hidden_tag() }}
-        <div class="card-header border-secondary border-opacity-25 bg-transparent py-3">
-          <h5 class="card-title m-0 mono text-white"><i class="bi bi-pencil-square me-2"></i>РЕДАКТИРОВАНИЕ_ПАРАМЕТРОВ</h5>
+        <div class="card bg-dark neon-border-blue shadow-lg mb-4 overflow-hidden">
+          <div class="accordion accordion-flush" id="apptEditAccordion">
+            <div class="accordion-item bg-dark border-0">
+              <h2 class="accordion-header m-0" id="headingApptParams">
+                <button class="accordion-button appt-acc-btn mono text-white py-3" type="button" data-bs-toggle="collapse" data-bs-target="#collapseApptParams" aria-expanded="true" aria-controls="collapseApptParams">
+                  <i class="bi bi-pencil-square me-2"></i>РЕДАКТИРОВАНИЕ_ПАРАМЕТРОВ
+                </button>
+              </h2>
+              <div id="collapseApptParams" class="accordion-collapse collapse show" data-bs-parent="#apptEditAccordion" aria-labelledby="headingApptParams">
+                <div class="accordion-body p-0">
+                  <div class="p-4">
+                    <div class="row mb-4">
+                      <div class="col-md-6 mb-3">
+                        <label class="form-label mono text-secondary small">МАСТЕР</label>
+                        {{ form.master_id(class="form-select bg-dark text-white border-secondary border-opacity-50 mono", style="color-scheme: dark;") }}
+                      </div>
+                      <div class="col-md-6 mb-3">
+                        <label class="form-label mono text-secondary small">> СТАТУС_СИСТЕМЫ</label>
+                        {{ form.status(class="form-select bg-dark text-white border-secondary border-opacity-50 mono") }}
+                      </div>
+                      <div class="col-12">
+                        <input type="hidden" name="time_slot_ids" id="admin-appt-time-slot-ids" value="{{ current_slot_ids|join(',') }}">
+                        {{ form.start_at(class="d-none", id="admin-appt-start-at") }}
+                        <div class="mono small mb-2">
+                          <span class="text-secondary">Время приёма:</span>
+                          <span id="admin-appt-picked-time" class="text-white ms-1">{{ appointment.visit_display_label() or '—' }}</span>
+                        </div>
+                        <div id="admin-appt-slots-status" class="text-secondary mono small mb-2" style="min-height: 1.25rem;"></div>
+                        <div id="admin-appt-slots-grid" class="admin-appt-days-row d-flex flex-wrap gap-2 align-items-stretch"></div>
+                        <div id="admin-appt-day-timelines" class="admin-appt-tl-wrap mt-3"></div>
+                        <div class="admin-appt-tl-legend mono smaller text-secondary mt-2 mb-1 d-flex flex-wrap gap-3 align-items-center">
+                          <span class="d-inline-flex align-items-center gap-1"><i class="admin-appt-tl-swatch" data-state="free"></i> свободно</span>
+                          <span class="d-inline-flex align-items-center gap-1"><i class="admin-appt-tl-swatch" data-state="other"></i> занято</span>
+                          <span class="d-inline-flex align-items-center gap-1"><i class="admin-appt-tl-swatch" data-state="self"></i> эта заявка</span>
+                          <span class="d-inline-flex align-items-center gap-1"><i class="admin-appt-tl-swatch" data-state="blocked"></i> блок</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="row mb-0">
+                      <div class="col-12 mb-3">
+                        <h6 class="mono text-white border-bottom border-secondary border-opacity-25 pb-2">ДАННЫЕ_ОБ_ОБЪЕКТЕ (АВТОМОБИЛЬ)</h6>
+                      </div>
+                      <div class="col-md-6 mb-3">
+                        <label class="form-label mono text-secondary small">> МАРКА</label>
+                        {{ form.car_make(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="ГАЗ") }}
+                      </div>
+                      <div class="col-md-6 mb-3">
+                        <label class="form-label mono text-secondary small">> МОДЕЛЬ</label>
+                        {{ form.car_model(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Соболь") }}
+                      </div>
+                      <div class="col-md-6 mb-3">
+                        <label class="form-label mono text-secondary small">> ГОД_ВЫПУСКА</label>
+                        {{ form.car_year(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="2004") }}
+                      </div>
+                      <div class="col-md-6 mb-3">
+                        <label class="form-label mono text-secondary small">> ГОС_НОМЕР</label>
+                        {{ form.car_number(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="A000AA77") }}
+                      </div>
+                      <div class="col-md-6 mb-3">
+                        <label class="form-label mono text-secondary small">> WIN_НОМЕР</label>
+                        {{ form.win_number(class="form-control bg-dark text-white border-secondary border-opacity-50 mono js-win-number-input", placeholder="0–9, A–Z", title="Только цифры и латинские буквы A–Z", pattern="[A-Z0-9]*", maxlength="32", autocomplete="off") }}
+                      </div>
+                    </div>
+                  </div>
+                  <div class="border-top border-secondary border-opacity-25 p-4 bg-dark bg-opacity-25">
+                    <div class="d-grid">
+                      <button type="submit" class="btn btn-info py-3 mono fw-bold">
+                        <i class="bi bi-save me-2"></i>СОХРАНИТЬ_ИЗМЕНЕНИЯ.EXE
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="card-body p-4">
-          <!-- Section 1: Core Params -->
-          <div class="row mb-4">
-            <div class="col-md-6 mb-3">
-              <label class="form-label mono text-secondary small">МАСТЕР</label>
-                {{ form.master_id(class="form-select bg-dark text-white border-secondary border-opacity-50 mono", style="color-scheme: dark;") }}
-            </div>
-            <div class="col-md-6 mb-3">
-              <label class="form-label mono text-secondary small">> СТАТУС_СИСТЕМЫ</label>
-              {{ form.status(class="form-select bg-dark text-white border-secondary border-opacity-50 mono") }}
-            </div>
-            <div class="col-12">
-              <label class="form-label mono text-secondary small">> ВРЕМЯ_ПРИЕМА (ГГГГ-ММ-ДД чч:мм)</label>
-              {{ form.start_at(class="form-control bg-dark text-white border-secondary border-opacity-50 mono") }}
+
+        <div class="card bg-dark neon-border-blue shadow-lg mb-4">
+          <div class="card-header bg-transparent border-secondary border-opacity-25 py-3">
+            <h5 class="card-title m-0 mono text-white">
+              <i class="bi bi-clipboard2-pulse me-2"></i>ОПИСАНИЯ НЕИСПРАВНОСТЕЙ
+            </h5>
+          </div>
+          <div class="card-body">
+            {{ form.problem_description(class="form-control bg-dark text-white border-secondary border-opacity-50 mono d-none", rows=4) }}
+            <div class="mb-3">
+              <div id="admin-issues-editor"></div>
+              <div class="d-flex gap-2 align-items-center mt-2">
+                <button type="button" id="admin-issues-add" class="btn btn-outline-info mono small" title="Добавить">
+                  <i class="bi bi-plus-lg"></i>
+                </button>
+                <div id="admin-issues-status" class="ms-auto text-secondary mono small"></div>
+              </div>
             </div>
           </div>
-
-          <!-- Section 2: Vehicle Data -->
-          <div class="row mb-4">
-            <div class="col-12 mb-3">
-              <h6 class="mono text-white border-bottom border-secondary border-opacity-25 pb-2">ДАННЫЕ_ОБ_ОБЪЕКТЕ (АВТОМОБИЛЬ)</h6>
+          <div class="border-top border-secondary border-opacity-25 p-4 bg-dark bg-opacity-25">
+            <div class="d-grid">
+              <button type="submit" class="btn btn-info py-3 mono fw-bold">
+                <i class="bi bi-save me-2"></i>СОХРАНИТЬ_ИЗМЕНЕНИЯ.EXE
+              </button>
             </div>
-            <div class="col-md-6 mb-3">
-              <label class="form-label mono text-secondary small">> МАРКА</label>
-              {{ form.car_make(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="ГАЗ") }}
-            </div>
-            <div class="col-md-6 mb-3">
-              <label class="form-label mono text-secondary small">> МОДЕЛЬ</label>
-              {{ form.car_model(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Соболь") }}
-            </div>
-            <div class="col-md-6 mb-3">
-              <label class="form-label mono text-secondary small">> ГОД_ВЫПУСКА</label>
-              {{ form.car_year(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="2004") }}
-            </div>
-            <div class="col-md-6 mb-3">
-              <label class="form-label mono text-secondary small">> ГОС_НОМЕР</label>
-              {{ form.car_number(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="A000AA77") }}
-            </div>
-          </div>
-
-          <!-- Section 3: Problem Description -->
-          <div class="row mb-4">
-            <div class="col-12">
-              <label class="form-label mono text-secondary small">> ОПИСАНИЕ_НЕИСПРАВНОСТЕЙ</label>
-              {{ form.problem_description(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", rows=4, placeholder="Введите описание проблемы...") }}
-            </div>
-          </div>
-
-          <div class="d-grid">
-            <button type="submit" class="btn btn-info py-3 mono fw-bold">
-              <i class="bi bi-save me-2"></i>СОХРАНИТЬ_ИЗМЕНЕНИЯ.EXE
-            </button>
           </div>
         </div>
       </form>
+      <style>
+        #apptEditAccordion .appt-acc-btn {
+          background: rgba(0, 0, 0, 0.35);
+          color: #fff;
+          box-shadow: none;
+        }
+        #apptEditAccordion .appt-acc-btn:not(.collapsed) {
+          background: rgba(13, 202, 240, 0.12);
+          color: #fff;
+        }
+        #apptEditAccordion .appt-acc-btn:focus {
+          box-shadow: none;
+          border-color: rgba(255, 255, 255, 0.08);
+        }
+        #apptEditAccordion .appt-acc-btn::after {
+          filter: invert(1);
+          opacity: 0.85;
+        }
+        .admin-appt-days-row {
+          padding: 2px;
+        }
+        .admin-appt-day-btn {
+          position: relative;
+          width: 4.5rem;
+          height: 4.5rem;
+          padding: 0.35rem 0.25rem;
+          border: 1px solid rgba(255, 255, 255, 0.22);
+          background: rgba(0, 0, 0, 0.4);
+          color: #fff;
+          border-radius: 0.35rem;
+          font-family: ui-monospace, monospace;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          line-height: 1.15;
+          transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+        }
+        .admin-appt-day-badge {
+          position: absolute;
+          top: 3px;
+          right: 3px;
+          min-width: 1rem;
+          height: 1rem;
+          padding: 0 0.2rem;
+          font-size: 0.55rem;
+          font-weight: 700;
+          line-height: 1rem;
+          border-radius: 0.2rem;
+          background: rgba(13, 202, 240, 0.45);
+          color: #0a0a0a;
+          text-align: center;
+        }
+        .admin-appt-day-btn:hover {
+          border-color: rgba(13, 202, 240, 0.55);
+          background: rgba(13, 202, 240, 0.14);
+          color: #fff;
+        }
+        .admin-appt-day-btn .admin-appt-day-wd {
+          font-size: 0.65rem;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          opacity: 0.85;
+        }
+        .admin-appt-day-btn .admin-appt-day-num {
+          font-size: 1.35rem;
+          font-weight: 700;
+          color: rgba(13, 202, 240, 0.95);
+        }
+        .admin-appt-day-btn .admin-appt-day-mon {
+          font-size: 0.65rem;
+          opacity: 0.75;
+        }
+        .admin-appt-day-btn.is-selected-day {
+          border-color: rgba(13, 202, 240, 0.9);
+          background: rgba(13, 202, 240, 0.18);
+          box-shadow: 0 0 0 1px rgba(13, 202, 240, 0.35);
+        }
+        #adminApptSlotsModal .modal-body {
+          max-height: min(60vh, 420px);
+          overflow-y: auto;
+        }
+        .admin-appt-slot-btn {
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          background: rgba(0, 0, 0, 0.35);
+          color: #fff;
+          font-family: ui-monospace, monospace;
+          font-size: 0.8rem;
+          padding: 0.45rem 0.65rem;
+          border-radius: 0.25rem;
+          line-height: 1.25;
+          text-align: left;
+          transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+        }
+        .admin-appt-slot-btn:hover {
+          border-color: rgba(13, 202, 240, 0.55);
+          background: rgba(13, 202, 240, 0.12);
+          color: #fff;
+        }
+        .admin-appt-slot-btn.is-active {
+          border-color: rgba(13, 202, 240, 0.9);
+          background: rgba(13, 202, 240, 0.22);
+          box-shadow: 0 0 0 1px rgba(13, 202, 240, 0.35);
+          color: #fff;
+        }
+        .admin-appt-tl-wrap {
+          display: flex;
+          flex-direction: column;
+          gap: 0.4rem;
+        }
+        .admin-appt-tl-row {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+        }
+        .admin-appt-tl-dayl {
+          width: 2.75rem;
+          flex-shrink: 0;
+          font-size: 0.7rem;
+          color: rgba(255, 255, 255, 0.55);
+        }
+        .admin-appt-tl-track {
+          flex: 1;
+          height: 12px;
+          background: rgba(255, 255, 255, 0.07);
+          border-radius: 6px;
+          position: relative;
+          min-width: 140px;
+          border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .admin-appt-tl-seg {
+          position: absolute;
+          top: 1px;
+          height: calc(100% - 2px);
+          border-radius: 3px;
+          min-width: 1px;
+          box-sizing: border-box;
+          transition: box-shadow 0.12s;
+        }
+        .admin-appt-tl-seg[data-state='free'] {
+          background: rgba(25, 135, 84, 0.82);
+        }
+        .admin-appt-tl-seg[data-state='other'] {
+          background: rgba(220, 53, 69, 0.72);
+        }
+        .admin-appt-tl-seg[data-state='self'] {
+          background: rgba(255, 193, 7, 0.92);
+        }
+        .admin-appt-tl-seg[data-state='blocked'] {
+          background: rgba(108, 117, 125, 0.75);
+        }
+        .admin-appt-tl-seg.admin-appt-tl-seg-ui {
+          box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.95);
+          z-index: 2;
+        }
+        i.admin-appt-tl-swatch {
+          display: inline-block;
+          width: 0.65rem;
+          height: 0.65rem;
+          border-radius: 2px;
+          font-style: normal;
+          vertical-align: middle;
+        }
+        i.admin-appt-tl-swatch[data-state='free'] {
+          background: rgba(25, 135, 84, 0.82);
+        }
+        i.admin-appt-tl-swatch[data-state='other'] {
+          background: rgba(220, 53, 69, 0.72);
+        }
+        i.admin-appt-tl-swatch[data-state='self'] {
+          background: rgba(255, 193, 7, 0.92);
+        }
+        i.admin-appt-tl-swatch[data-state='blocked'] {
+          background: rgba(108, 117, 125, 0.75);
+        }
+      </style>
+
+      <div class="modal fade" id="adminApptSlotsModal" tabindex="-1" aria-labelledby="adminApptSlotsModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+          <div class="modal-content bg-dark neon-border-blue border border-secondary border-opacity-25">
+            <div class="modal-header border-secondary border-opacity-25">
+              <h5 class="modal-title mono text-white" id="adminApptSlotsModalTitle">СЛОТЫ_ДНЯ</h5>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body pt-0">
+              <p class="text-secondary mono small mb-2 mb-md-3">В одном дне — только стык в стык; в разные дни — отдельные окна. Повторный клик — снять.</p>
+              <div id="admin-appt-modal-slots" class="d-flex flex-wrap gap-2"></div>
+            </div>
+            <div class="modal-footer border-secondary border-opacity-25">
+              <button type="button" class="btn btn-info mono" data-bs-dismiss="modal">Готово</button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- Work Items List -->
+      {% set ns = namespace(total_price=0, total_duration=0) %}
+      {% for it in appointment.items %}
+        {% if not it.declined_by_client %}
+          {% set _qty = (it.qty or 1) %}
+          {% set _row_total_price = ((it.price_snapshot or 0) * (it.k2 or 1.0) * _qty) | round(0, 'common') | int %}
+          {% set _row_total_duration = ((it.duration_snapshot or 0) * (it.k1 or 1.0) * _qty) | round(0, 'common') | int %}
+          {% set ns.total_price = ns.total_price + _row_total_price %}
+          {% set ns.total_duration = ns.total_duration + _row_total_duration %}
+        {% endif %}
+      {% endfor %}
       <div class="card bg-dark neon-border-blue mb-4">
         <div class="card-header border-secondary border-opacity-25 bg-transparent py-3 d-flex justify-content-between align-items-center">
-          <h5 class="card-title m-0 mono text-white"><i class="bi bi-list-check me-2"></i>ВЫБРАННЫЕ_УСЛУГИ</h5>
-          <span class="badge bg-info text-dark mono">{{ appointment.items|length }} ПОЗИЦИЙ</span>
+          {% set _h_total = (ns.total_duration // 60) %}
+          {% set _m_total = (ns.total_duration % 60) %}
+          <h5 class="card-title m-0 mono text-white"><i class="bi bi-list-check me-2"></i>ВЫБРАННЫЕ_УСЛУГИ <span class="ms-3 text-info">Σ <span id="appointment-items-total-duration">{{ "%02d"|format(_h_total) }}:{{ "%02d"|format(_m_total) }}</span></span> <span class="ms-3 neon-text-blue">Σ <span id="appointment-items-total">{{ "{:,.0f}".format(ns.total_price).replace(',', ' ') }}</span> ₽</span></h5>
+          <span class="badge bg-info text-dark mono"><span id="appointment-items-count">{{ appointment.items|length }}</span> ПОЗИЦИЙ</span>
         </div>
         <div class="card-body p-0">
           <div class="table-responsive">
@@ -86,17 +374,61 @@
               <thead class="text-secondary border-secondary border-opacity-25">
                 <tr>
                   <th class="ps-4">НАИМЕНОВАНИЕ</th>
+                  <th>ДОПОЛНИТЕЛЬНО</th>
                   <th>ДЛИТЕЛЬНОСТЬ</th>
+                  <th>К1</th>
+                  <th>ИТОГО ДЛИТЕЛЬНОСТЬ</th>
                   <th>СТОИМОСТЬ</th>
+                  <th>К2</th>
+                  <th>ИТОГО СТОИМОСТЬ</th>
                   <th class="text-end pe-4">ДЕЙСТВИЯ</th>
                 </tr>
               </thead>
-              <tbody class="border-secondary border-opacity-10">
+              <tbody class="border-secondary border-opacity-10" id="appointment-items-tbody">
                 {% for item in appointment.items %}
-                <tr>
-                  <td class="ps-4">> {{ item.work.title }}</td>
-                  <td>{{ item.duration_snapshot }} МИН</td>
-                  <td class="neon-text-blue">{{ item.price_snapshot or 0 }} РУБ.</td>
+                <tr data-item-id="{{ item.id }}" data-base-duration="{{ item.duration_snapshot or 0 }}" data-base-price="{{ item.price_snapshot or 0 }}" data-qty="{{ item.qty or 1 }}" data-declined="{{ 1 if item.declined_by_client else 0 }}">
+                  <td class="ps-4 {% if item.declined_by_client %}text-decoration-line-through text-secondary{% endif %}">> {{ item.work.title }}</td>
+                  <td style="width: 220px;">
+                    <input
+                      class="form-control form-control-sm bg-transparent border-0 border-bottom border-secondary border-opacity-25 text-white mono smaller p-0 appt-extra {% if item.declined_by_client %}text-decoration-line-through text-secondary{% endif %}"
+                      type="text"
+                      maxlength="255"
+                      value="{{ item.extra or '' }}"
+                      data-item-id="{{ item.id }}"
+                    >
+                  </td>
+                  {% set _d = (item.duration_snapshot or 0) %}
+                  {% set _h = (_d // 60) %}
+                  {% set _m = (_d % 60) %}
+                  <td class="text-info {% if item.declined_by_client %}text-decoration-line-through text-secondary{% endif %}">{{ "%02d"|format(_h) }}:{{ "%02d"|format(_m) }}</td>
+                  <td style="width: 90px;">
+                    <input
+                      class="form-control form-control-sm bg-transparent border-0 border-bottom border-secondary border-opacity-25 text-white mono smaller p-0 appt-k1"
+                      type="number"
+                      min="0.1"
+                      step="0.1"
+                      inputmode="decimal"
+                      value="{{ item.k1 or 1.0 }}"
+                      data-item-id="{{ item.id }}"
+                    >
+                  </td>
+                  {% set _td = (((item.duration_snapshot or 0) * (item.k1 or 1.0) * (item.qty or 1)) | round(0, 'common') | int) %}
+                  {% set _th = (_td // 60) %}
+                  {% set _tm = (_td % 60) %}
+                  <td class="appt-total-duration text-info {% if item.declined_by_client %}text-decoration-line-through text-secondary{% endif %}">{{ "%02d"|format(_th) }}:{{ "%02d"|format(_tm) }}</td>
+                  <td class="neon-text-blue {% if item.declined_by_client %}text-decoration-line-through text-secondary{% endif %}">{{ item.price_snapshot or 0 }} РУБ.</td>
+                  <td style="width: 90px;">
+                    <input
+                      class="form-control form-control-sm bg-transparent border-0 border-bottom border-secondary border-opacity-25 text-white mono smaller p-0 appt-k2"
+                      type="number"
+                      min="0.1"
+                      step="0.1"
+                      inputmode="decimal"
+                      value="{{ item.k2 or 1.0 }}"
+                      data-item-id="{{ item.id }}"
+                    >
+                  </td>
+                  <td class="appt-total-price neon-text-blue {% if item.declined_by_client %}text-decoration-line-through text-secondary{% endif %}">{{ ((item.price_snapshot or 0) * (item.k2 or 1.0) * (item.qty or 1)) | round(0, 'common') | int }} РУБ.</td>
                   <td class="text-end pe-4">
                     <form action="{{ url_for('admin.appointment_item_delete', appointment_id=appointment.id, item_id=item.id) }}" method="POST" class="d-inline">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -108,8 +440,8 @@
                 </tr>
                 {% endfor %}
                 {% if not appointment.items %}
-                <tr>
-                  <td colspan="4" class="text-center py-4 text-secondary opacity-50">СПЕЦИАЛИЗАЦИИ_НЕ_ВЫБРАНЫ.NULL</td>
+                <tr id="appointment-items-empty-row">
+                  <td colspan="9" class="text-center py-4 text-secondary opacity-50">СПЕЦИАЛИЗАЦИИ_НЕ_ВЫБРАНЫ.NULL</td>
                 </tr>
                 {% endif %}
               </tbody>
@@ -117,15 +449,11 @@
           </div>
         </div>
         <div class="card-footer border-secondary border-opacity-25 bg-transparent py-3">
-          <form action="{{ url_for('admin.appointment_item_add', appointment_id=appointment.id) }}" method="POST" class="row g-2">
-            {{ item_form.hidden_tag() }}
-            <div class="col-sm-9">
-              {{ item_form.work_id(class="form-select bg-dark text-white border-secondary border-opacity-50 mono small") }}
-            </div>
-            <div class="col-sm-3">
-              <button type="submit" class="btn btn-outline-info w-100 mono small">ДОБАВИТЬ.ADD</button>
-            </div>
-          </form>
+          <div class="d-flex justify-content-end">
+            <button id="open-add-work-modal" type="button" class="btn btn-outline-info mono small" data-bs-toggle="modal" data-bs-target="#addWorkModal">
+              <i class="bi bi-plus-lg me-2"></i>ДОБАВИТЬ.ADD
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -190,6 +518,1400 @@
     </div>
   </div>
 </div>
+
+<div class="modal fade" id="addWorkModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-xl modal-dialog-centered">
+    <div class="modal-content bg-dark neon-border-blue">
+      <div class="modal-header border-secondary border-opacity-25">
+        <h5 class="modal-title mono text-white">ДОБАВЛЕНИЕ_УСЛУГ</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <ul class="nav nav-pills gap-2 mb-3" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active mono small" id="tab-search" data-bs-toggle="pill" data-bs-target="#pane-search" type="button" role="tab">ПОИСК_В_ДЕРЕВЕ</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link mono small" id="tab-create" data-bs-toggle="pill" data-bs-target="#pane-create" type="button" role="tab">СОЗДАТЬ_НОВУЮ</button>
+          </li>
+        </ul>
+
+        <div class="tab-content">
+          <div class="tab-pane fade show active" id="pane-search" role="tabpanel">
+            <div class="row g-3 mb-3">
+              <div class="col-lg-8">
+                <input id="work-tree-search" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" placeholder="Поиск по части строки…">
+              </div>
+              <div class="col-lg-4 d-flex align-items-center justify-content-lg-end">
+                <div id="work-tree-status" class="text-secondary mono small"></div>
+              </div>
+            </div>
+
+            <div id="work-tree-container" class="border border-secondary border-opacity-25 rounded p-2">
+              {% for section in sections %}
+              <div class="mb-2 wt-section" data-wt-section="{{ section.id }}">
+                <button class="btn btn-sm btn-outline-info w-100 text-start mono" type="button" data-bs-toggle="collapse" data-bs-target="#wt-sec-{{ section.id }}">
+                  <i class="bi bi-diagram-3 me-2"></i>{{ section.title }}
+                </button>
+                <div class="collapse show mt-2" id="wt-sec-{{ section.id }}">
+                  {% for cat in categories_by_section.get(section.id, []) %}
+                  <div class="ms-2 mb-2 wt-category" data-wt-category="{{ cat.id }}">
+                    <button class="btn btn-sm btn-outline-warning w-100 text-start mono small" type="button" data-bs-toggle="collapse" data-bs-target="#wt-cat-{{ cat.id }}">
+                      <i class="bi bi-folder2 me-2"></i>{{ cat.title }}
+                    </button>
+                    <div class="collapse show mt-2" id="wt-cat-{{ cat.id }}">
+                      <div class="list-group list-group-flush">
+                        {% for w in works_by_category.get(cat.id, []) %}
+                        <button
+                          type="button"
+                          class="list-group-item list-group-item-action bg-dark text-white border-secondary border-opacity-25 d-flex justify-content-between align-items-center wt-work"
+                          data-work-id="{{ w.id }}"
+                          data-search="{{ (section.title ~ ' ' ~ cat.title ~ ' ' ~ w.title)|lower }}"
+                        >
+                          <span class="mono small">> {{ w.title }}</span>
+                          <span class="d-flex gap-2 align-items-center">
+                            <span class="badge border border-secondary text-secondary bg-secondary bg-opacity-10 border-opacity-25 mono">{{ w.duration_min }} МИН</span>
+                            <span class="badge border border-success text-success bg-success bg-opacity-10 border-opacity-25 mono">{{ w.base_price or 0 }} РУБ</span>
+                            <span class="badge bg-info text-dark mono">+</span>
+                          </span>
+                        </button>
+                        {% else %}
+                        <div class="list-group-item bg-dark text-secondary border-secondary border-opacity-25 mono small">ПУСТО</div>
+                        {% endfor %}
+                      </div>
+                    </div>
+                  </div>
+                  {% else %}
+                  <div class="text-secondary mono small ms-2">КАТЕГОРИЙ_НЕТ</div>
+                  {% endfor %}
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="tab-pane fade" id="pane-create" role="tabpanel">
+            <form action="{{ url_for('admin.appointment_item_add_new_work', appointment_id=appointment.id) }}" method="POST" class="row g-2">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div class="col-12">
+                <div class="text-secondary mono small mb-2">ДОБАВИТЬ_НОВУЮ_РАБОТУ (СОХРАНИТЬ_В_БАЗУ)</div>
+              </div>
+              <div class="col-lg-5">
+                <input name="new_work_title" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" placeholder="Название работы" required>
+              </div>
+              <div class="col-lg-4">
+                <select name="new_work_category_id" class="form-select bg-dark text-white border-secondary border-opacity-50 mono" required>
+                  <option value="">КАТЕГОРИЯ...</option>
+                  {% for cat in categories %}
+                    <option value="{{ cat.id }}">{{ (cat.competency.title ~ " / ") if cat.competency else "" }}{{ cat.title }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-6 col-lg-1">
+                <input name="new_work_duration_min" type="number" min="0" step="1" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" placeholder="МИН" required>
+              </div>
+              <div class="col-6 col-lg-2">
+                <input name="new_work_base_price" type="number" min="0" step="1" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" placeholder="РУБ">
+              </div>
+              <div class="col-12">
+                <button type="submit" class="btn btn-outline-warning w-100 mono">СОЗДАТЬ_И_ДОБАВИТЬ.EXE</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer border-secondary border-opacity-25">
+        <button type="button" class="btn btn-outline-secondary mono" data-bs-dismiss="modal">ЗАКРЫТЬ</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    document.querySelectorAll('.js-win-number-input').forEach(function (el) {
+      el.addEventListener('input', function () {
+        const v = String(el.value || '').replace(/[^0-9A-Za-z]/g, '').toUpperCase().slice(0, 32);
+        if (v !== el.value) el.value = v;
+      });
+    });
+  })();
+</script>
+
+<script>
+  (function () {
+    const slotsUrl = {{ url_for('admin.appointment_available_slots_json', appointment_id=appointment.id)|tojson }};
+    const masterSelect = document.getElementById('master_id');
+    const gridEl = document.getElementById('admin-appt-slots-grid');
+    const statusEl = document.getElementById('admin-appt-slots-status');
+    const slotIdsInput = document.getElementById('admin-appt-time-slot-ids');
+    const startAtInput = document.getElementById('admin-appt-start-at');
+    const modalEl = document.getElementById('adminApptSlotsModal');
+    const modalTitleEl = document.getElementById('adminApptSlotsModalTitle');
+    const modalSlotsEl = document.getElementById('admin-appt-modal-slots');
+
+    const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+    const WD_SHORT = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+
+    let lastByDay = {};
+    let lastDayTimelines = [];
+    let selectedSlots = [];
+    let modalOpenDateKey = null;
+
+    function getSlotsModal() {
+      if (!modalEl || !window.bootstrap || !window.bootstrap.Modal) return null;
+      return window.bootstrap.Modal.getOrCreateInstance(modalEl);
+    }
+
+    if (modalEl) {
+      modalEl.addEventListener('hidden.bs.modal', () => {
+        modalOpenDateKey = null;
+      });
+    }
+
+    function toDatetimeLocalValue(iso) {
+      if (!iso || typeof iso !== 'string') return '';
+      if (iso.length >= 16) return iso.slice(0, 16);
+      return iso;
+    }
+
+    function dateKeyFromStart(iso) {
+      if (!iso || typeof iso !== 'string') return '';
+      return iso.length >= 10 ? iso.slice(0, 10) : '';
+    }
+
+    function parseDateParts(dateKey) {
+      const p = dateKey.split('-');
+      if (p.length !== 3) return null;
+      const y = Number(p[0]);
+      const m = Number(p[1]);
+      const d = Number(p[2]);
+      if (!y || !m || !d) return null;
+      return { y, m, d, dt: new Date(y, m - 1, d) };
+    }
+
+    function formatModalTitle(dateKey) {
+      const parts = parseDateParts(dateKey);
+      if (!parts) return dateKey;
+      const w = WD_SHORT[parts.dt.getDay()];
+      const mon = MONTHS_SHORT[parts.m - 1];
+      return parts.d + ' ' + mon + ' · ' + w;
+    }
+
+    function todayKeyLocal() {
+      const n = new Date();
+      return (
+        n.getFullYear() +
+        '-' +
+        String(n.getMonth() + 1).padStart(2, '0') +
+        '-' +
+        String(n.getDate()).padStart(2, '0')
+      );
+    }
+
+    function parseSlotStartMs(iso) {
+      if (!iso || typeof iso !== 'string') return null;
+      const n = iso.indexOf('T') >= 0 ? iso : iso.replace(' ', 'T');
+      const t = new Date(n);
+      return isNaN(t.getTime()) ? null : t.getTime();
+    }
+
+    function filterUpcomingSlots(slots) {
+      const now = Date.now();
+      return (slots || []).filter((s) => {
+        const ms = parseSlotStartMs(s.start_at);
+        return ms != null && ms >= now - 800;
+      });
+    }
+
+    function groupSlotsByDay(slots) {
+      const map = {};
+      (slots || []).forEach((s) => {
+        const k = dateKeyFromStart(s.start_at);
+        if (!k) return;
+        if (!map[k]) map[k] = [];
+        map[k].push(s);
+      });
+      Object.keys(map).forEach((k) => {
+        map[k].sort((a, b) => String(a.start_at).localeCompare(String(b.start_at)));
+      });
+      return map;
+    }
+
+    function sortSlotsByStart(slots) {
+      return [...(slots || [])].sort((a, b) => String(a.start_at).localeCompare(String(b.start_at)));
+    }
+
+    /** Внутри календарного дня слоты только подряд; разные дни — независимо. */
+    function isValidMultiDayChain(slots) {
+      const sorted = sortSlotsByStart(slots);
+      if (!sorted.length) return false;
+      const byDay = {};
+      sorted.forEach((s) => {
+        const k = dateKeyFromStart(s.start_at);
+        if (!k) return;
+        if (!byDay[k]) byDay[k] = [];
+        byDay[k].push(s);
+      });
+      for (const k of Object.keys(byDay)) {
+        const g = sortSlotsByStart(byDay[k]);
+        for (let i = 0; i < g.length - 1; i++) {
+          if (String(g[i].end_at || '').trim() !== String(g[i + 1].start_at || '').trim()) return false;
+        }
+      }
+      return true;
+    }
+
+    function formatPickedRangeLabel(sorted) {
+      if (!sorted.length) return '—';
+      const byDay = {};
+      sorted.forEach((s) => {
+        const k = dateKeyFromStart(s.start_at);
+        if (!k) return;
+        if (!byDay[k]) byDay[k] = [];
+        byDay[k].push(s);
+      });
+      const parts = [];
+      Object.keys(byDay)
+        .sort()
+        .forEach((k) => {
+          const g = sortSlotsByStart(byDay[k]);
+          let i = 0;
+          while (i < g.length) {
+            const smin = g[i];
+            let j = i;
+            while (
+              j + 1 < g.length &&
+              String(g[j].end_at || '').trim() === String(g[j + 1].start_at || '').trim()
+            ) {
+              j++;
+            }
+            const smax = g[j];
+            const parts2 = parseDateParts(k);
+            const dd = parts2 ? String(parts2.d).padStart(2, '0') : '';
+            const mm = parts2 ? String(parts2.m).padStart(2, '0') : '';
+            const t0 = smin.start_at.length >= 16 ? smin.start_at.slice(11, 16) : '';
+            const t1 = smax.end_at && smax.end_at.length >= 16 ? smax.end_at.slice(11, 16) : '';
+            if (dd && mm && t0 && t1) parts.push(dd + '.' + mm + ' ' + t0 + '–' + t1);
+            i = j + 1;
+          }
+        });
+      const suf = sorted.length > 1 ? ' (' + sorted.length + ' сл.)' : '';
+      return (parts.length ? parts.join('; ') : '—') + suf;
+    }
+
+    function setPickedTimeText(text) {
+      const el = document.getElementById('admin-appt-picked-time');
+      if (el) el.textContent = text && String(text).trim() ? text : '—';
+    }
+
+    function parseIsoMs(iso) {
+      if (!iso || typeof iso !== 'string') return null;
+      const n = iso.indexOf('T') >= 0 ? iso : iso.replace(' ', 'T');
+      const t = new Date(n);
+      return isNaN(t.getTime()) ? null : t.getTime();
+    }
+
+    function shortDayLabelFromKey(dk) {
+      const p = parseDateParts(dk);
+      if (!p) return dk;
+      return String(p.d).padStart(2, '0') + '.' + String(p.m).padStart(2, '0');
+    }
+
+    function updateTimelineSelectHighlight() {
+      const ids = new Set(selectedSlots.map((s) => Number(s.id)));
+      document.querySelectorAll('#admin-appt-day-timelines .admin-appt-tl-seg').forEach((el) => {
+        const sid = Number(el.dataset.slotId || '0');
+        el.classList.toggle('admin-appt-tl-seg-ui', sid > 0 && ids.has(sid));
+      });
+    }
+
+    function renderDayTimelineCharts(timelines) {
+      const wrap = document.getElementById('admin-appt-day-timelines');
+      if (!wrap) return;
+      lastDayTimelines = timelines || [];
+      const tKey = todayKeyLocal();
+      const rows = lastDayTimelines.filter((d) => d && d.date >= tKey);
+      wrap.innerHTML = '';
+      rows.forEach((day) => {
+        const segs = day.segments || [];
+        if (!segs.length) return;
+        let rangeStart = Infinity;
+        let rangeEnd = -Infinity;
+        segs.forEach((seg) => {
+          const a = parseIsoMs(seg.start_at);
+          const b = parseIsoMs(seg.end_at);
+          if (a == null || b == null) return;
+          rangeStart = Math.min(rangeStart, a);
+          rangeEnd = Math.max(rangeEnd, b);
+        });
+        if (!isFinite(rangeStart) || rangeEnd <= rangeStart) return;
+        const range = rangeEnd - rangeStart || 1;
+
+        const row = document.createElement('div');
+        row.className = 'admin-appt-tl-row';
+        row.dataset.day = day.date;
+        const lab = document.createElement('div');
+        lab.className = 'admin-appt-tl-dayl';
+        lab.textContent = shortDayLabelFromKey(day.date);
+        const track = document.createElement('div');
+        track.className = 'admin-appt-tl-track';
+
+        segs.forEach((seg) => {
+          const a = parseIsoMs(seg.start_at);
+          const b = parseIsoMs(seg.end_at);
+          if (a == null || b == null) return;
+          const left = ((a - rangeStart) / range) * 100;
+          const width = ((b - a) / range) * 100;
+          const el = document.createElement('div');
+          el.className = 'admin-appt-tl-seg';
+          el.dataset.state = seg.state || 'free';
+          if (seg.id != null) el.dataset.slotId = String(seg.id);
+          el.style.left = left + '%';
+          el.style.width = Math.max(width, 0.2) + '%';
+          const t0 = (seg.start_at || '').length >= 16 ? seg.start_at.slice(11, 16) : '';
+          const t1 = (seg.end_at || '').length >= 16 ? seg.end_at.slice(11, 16) : '';
+          el.title = t0 + '–' + t1;
+          track.appendChild(el);
+        });
+
+        row.appendChild(lab);
+        row.appendChild(track);
+        wrap.appendChild(row);
+      });
+      updateTimelineSelectHighlight();
+    }
+
+    function slotTimeLabel(slot) {
+      const iso = slot.start_at || '';
+      if (iso.length < 16) return slot.label || '';
+      const t0 = iso.slice(11, 16);
+      const end = (slot.end_at || '').length >= 16 ? slot.end_at.slice(11, 16) : '';
+      return end ? t0 + '–' + end : t0;
+    }
+
+    function syncFormFromSelection() {
+      if (!slotIdsInput || !startAtInput) return;
+      const sorted = sortSlotsByStart(selectedSlots);
+      slotIdsInput.value = sorted.map((s) => s.id).join(',');
+      if (sorted.length) {
+        startAtInput.value = toDatetimeLocalValue(sorted[0].start_at);
+      } else {
+        startAtInput.value = '';
+      }
+    }
+
+    function refreshPickedLabelFromSelection() {
+      const sorted = sortSlotsByStart(selectedSlots);
+      setPickedTimeText(formatPickedRangeLabel(sorted));
+      updateTimelineSelectHighlight();
+    }
+
+    function refreshDayHighlights() {
+      if (!gridEl) return;
+      gridEl.querySelectorAll('.admin-appt-day-btn.is-selected-day').forEach((b) => b.classList.remove('is-selected-day'));
+      const keys = new Set();
+      sortSlotsByStart(selectedSlots).forEach((s) => {
+        const k = dateKeyFromStart(s.start_at);
+        if (k) keys.add(k);
+      });
+      keys.forEach((k) => {
+        const btn = gridEl.querySelector('.admin-appt-day-btn[data-day="' + k + '"]');
+        if (btn) btn.classList.add('is-selected-day');
+      });
+    }
+
+    function buildModalBody(dateKey) {
+      if (!modalSlotsEl || !modalTitleEl) return;
+      const nowMs = Date.now();
+      const list = ((lastByDay[dateKey]) || []).filter((s) => {
+        const ms = parseSlotStartMs(s.start_at);
+        return ms != null && ms >= nowMs - 800;
+      });
+      modalTitleEl.textContent = formatModalTitle(dateKey);
+      modalSlotsEl.innerHTML = '';
+      const selIdSet = new Set(selectedSlots.map((s) => Number(s.id)));
+      list.forEach((slot) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'admin-appt-slot-btn';
+        if (selIdSet.has(Number(slot.id))) b.classList.add('is-active');
+        b.textContent = slotTimeLabel(slot);
+        b.title = slot.label || '';
+        b.addEventListener('click', (e) => {
+          e.preventDefault();
+          toggleSlot(slot);
+          if (modalOpenDateKey) buildModalBody(modalOpenDateKey);
+        });
+        modalSlotsEl.appendChild(b);
+      });
+    }
+
+    function toggleSlot(slot) {
+      const id = Number(slot.id);
+      const idx = selectedSlots.findIndex((s) => Number(s.id) === id);
+      let next;
+      if (idx >= 0) {
+        next = selectedSlots.filter((_, i) => i !== idx);
+      } else {
+        next = sortSlotsByStart([...selectedSlots, slot]);
+      }
+      if (next.length && !isValidMultiDayChain(next)) {
+        window.alert(
+          'В один день слоты только подряд (стык в стык). В разные дни можно выбрать отдельные окна.'
+        );
+        return;
+      }
+      selectedSlots = next;
+      syncFormFromSelection();
+      refreshPickedLabelFromSelection();
+      refreshDayHighlights();
+    }
+
+    function openDayModal(dateKey) {
+      modalOpenDateKey = dateKey;
+      buildModalBody(dateKey);
+      const m = getSlotsModal();
+      if (m) m.show();
+    }
+
+    async function loadSlots(clearPicked) {
+      if (!masterSelect || !gridEl || !statusEl) return;
+      const mid = masterSelect.value;
+      gridEl.innerHTML = '';
+      lastByDay = {};
+      if (clearPicked) {
+        setPickedTimeText('—');
+      }
+      statusEl.textContent = '…';
+      if (!mid) {
+        statusEl.textContent = '';
+        renderDayTimelineCharts([]);
+        return;
+      }
+      try {
+        const r = await fetch(slotsUrl + '?master_id=' + encodeURIComponent(String(mid)));
+        const data = await r.json();
+        if (!r.ok || !data.ok) {
+          statusEl.textContent = (data && data.message) || 'Ошибка загрузки.';
+          renderDayTimelineCharts([]);
+          return;
+        }
+        renderDayTimelineCharts(data.day_timelines || []);
+        const pool = data.slots || [];
+
+        const pre =
+          data.selected_slot_ids && data.selected_slot_ids.length
+            ? data.selected_slot_ids.map(Number)
+            : data.selected_slot_id != null
+              ? [Number(data.selected_slot_id)]
+              : [];
+
+        selectedSlots = [];
+        let matched = false;
+        if (pre.length) {
+          for (const pid of pre) {
+            const ob = pool.find((s) => Number(s.id) === Number(pid));
+            if (ob) selectedSlots.push(ob);
+          }
+          selectedSlots = sortSlotsByStart(selectedSlots);
+          if (selectedSlots.length === pre.length && isValidMultiDayChain(selectedSlots)) {
+            syncFormFromSelection();
+            refreshPickedLabelFromSelection();
+            refreshDayHighlights();
+            matched = true;
+          } else {
+            selectedSlots = [];
+            syncFormFromSelection();
+            refreshPickedLabelFromSelection();
+          }
+        } else {
+          if (clearPicked) {
+            syncFormFromSelection();
+            refreshPickedLabelFromSelection();
+          }
+        }
+
+        if (pre.length && !matched && slotIdsInput) {
+          slotIdsInput.value = '';
+        }
+
+        let slots = filterUpcomingSlots(pool);
+        if (!slots.length) {
+          if (startAtInput) startAtInput.classList.remove('d-none');
+          statusEl.textContent = 'Нет слотов. График: меню расписания.';
+          return;
+        }
+        statusEl.textContent = pre.length && !matched ? 'Выберите слот.' : '';
+        if (startAtInput) startAtInput.classList.add('d-none');
+
+        const byDay = groupSlotsByDay(slots);
+        lastByDay = byDay;
+        const tKey = todayKeyLocal();
+        const dayKeys = Object.keys(byDay)
+          .filter((k) => k >= tKey)
+          .sort();
+
+        dayKeys.forEach((dateKey) => {
+          const parts = parseDateParts(dateKey);
+          if (!parts) return;
+          const w = WD_SHORT[parts.dt.getDay()];
+          const mon = MONTHS_SHORT[parts.m - 1];
+          const n = (byDay[dateKey] && byDay[dateKey].length) || 0;
+          if (n < 1) return;
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'admin-appt-day-btn';
+          btn.dataset.day = dateKey;
+          btn.innerHTML =
+            '<span class="admin-appt-day-badge">' +
+            n +
+            '</span><span class="admin-appt-day-wd">' +
+            w +
+            '</span><span class="admin-appt-day-num">' +
+            parts.d +
+            '</span><span class="admin-appt-day-mon">' +
+            mon +
+            '</span>';
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openDayModal(dateKey);
+          });
+          gridEl.appendChild(btn);
+        });
+      } catch (e) {
+        statusEl.textContent = 'Ошибка загрузки.';
+        renderDayTimelineCharts([]);
+      }
+    }
+
+    if (masterSelect) {
+      masterSelect.addEventListener('change', () => {
+        loadSlots(true);
+      });
+    }
+    loadSlots(false);
+
+    const apptEditForm = document.getElementById('appointment-edit-form');
+    if (apptEditForm) {
+      apptEditForm.addEventListener('submit', (ev) => {
+        if (!gridEl || !slotIdsInput) return;
+        if (gridEl.querySelector('.admin-appt-day-btn')) {
+          const ids = String(slotIdsInput.value || '')
+            .split(/[,\s]+/)
+            .map((x) => x.trim())
+            .filter(Boolean);
+          if (!ids.length || !selectedSlots.length || !isValidMultiDayChain(selectedSlots)) {
+            ev.preventDefault();
+            window.alert(
+              'Выберите слоты: в каждом дне подряд; при необходимости — несколько дней.'
+            );
+          }
+        }
+      });
+    }
+  })();
+</script>
+
+<script>
+  (function () {
+    window.adminApptProblemHash = {{ problem_description_hash|tojson }};
+    window.adminApptIssueMediaHash = {{ issue_media_hash|tojson }};
+    window.__adminIssueMediaSlots = {{ issue_media_slots|tojson }};
+    const csrfToken = '{{ csrf_token() }}';
+    const addUrl = '{{ url_for("admin.appointment_item_add_json", appointment_id=appointment.id) }}';
+    const deleteUrlTemplate = '{{ url_for("admin.appointment_item_delete", appointment_id=appointment.id, item_id=0) }}';
+    const coeffUrlTemplate = '{{ url_for("admin.appointment_item_update_coeffs_json", appointment_id=appointment.id, item_id=0) }}';
+    const extraUrlTemplate = '{{ url_for("admin.appointment_item_update_extra_json", appointment_id=appointment.id, item_id=0) }}';
+    const treeUrl = '{{ url_for("admin.appointment_work_tree_json", appointment_id=appointment.id) }}';
+    const itemsStatusUrl = '{{ url_for("admin.appointment_items_status_json", appointment_id=appointment.id) }}';
+    const problemSaveUrl = '{{ url_for("admin.appointment_problem_description_json", appointment_id=appointment.id) }}';
+    const issueMediaDeleteUrlTpl =
+      '{{ url_for("admin.appointment_issue_media_delete_json", appointment_id=appointment.id, media_id=0) }}';
+
+    const problemTextarea = document.getElementById('{{ form.problem_description.id }}');
+    const issuesEditor = document.getElementById('admin-issues-editor');
+    const issuesAddBtn = document.getElementById('admin-issues-add');
+    const issuesStatusEl = document.getElementById('admin-issues-status');
+
+    let issuesState = [''];
+    let editingMask = [true];
+    let lastRemoteProblemDescription = problemTextarea ? problemTextarea.value : '';
+    let problemPushTimer = null;
+
+    function parseIssues(text) {
+      const raw = String(text || '').trim();
+      if (!raw) return [''];
+
+      const lines = raw.split(/\r?\n/);
+      const items = [];
+      let current = null;
+      let foundNumbered = false;
+
+      for (const line of lines) {
+        const m = line.match(/^\s*(\d+)\s*[\)\.\-:]\s*(.*)\s*$/);
+        if (m) {
+          foundNumbered = true;
+          if (current && current.join('\n').trim()) items.push(current.join('\n').trim());
+          current = [m[2]];
+          continue;
+        }
+        if (!current) current = [];
+        current.push(line);
+      }
+
+      if (current && current.join('\n').trim()) items.push(current.join('\n').trim());
+
+      if (foundNumbered && items.length) return items;
+
+      const chunks = raw.split(/\n\s*\n+/).map((x) => x.trim()).filter(Boolean);
+      return chunks.length ? chunks : [''];
+    }
+
+    function buildProblemText(items) {
+      const cleaned = (items || []).map((x) => String(x || '').trim()).filter(Boolean);
+      if (!cleaned.length) return '';
+      return cleaned.map((t, idx) => `${idx + 1}) ${t}`).join('\n\n');
+    }
+
+    function escapeHtml(s) {
+      return String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function issueMediaStripHtml(slotIndex) {
+      const slots = window.__adminIssueMediaSlots;
+      if (!Array.isArray(slots) || slotIndex < 0 || slotIndex >= slots.length) return '';
+      const slot = slots[slotIndex];
+      if (!slot || !slot.length) return '';
+      let html =
+        '<div class="d-flex flex-wrap gap-1 align-items-start mt-2 cabinet-issue-media-strip cabinet-issue-readonly-media">';
+      slot.forEach((m) => {
+        if (!m || !m.id) return;
+        const u = escapeHtml(m.url);
+        const mid = Number(m.id);
+        const vid = String((m && m.mime) || '')
+          .toLowerCase()
+          .startsWith('video/');
+        const inner = vid
+          ? '<span class="issue-video-hover-wrap d-inline-block rounded border border-secondary border-opacity-25" data-video-hover-src="' +
+            u +
+            '"><video src="' +
+            u +
+            '" muted playsinline preload="metadata" class="rounded" style="max-height:8rem;max-width:100%;display:block;"></video></span>'
+          : '<a href="' +
+            u +
+            '" target="_blank" rel="noopener" class="d-inline-block"><img src="' +
+            u +
+            '" alt="" class="rounded border border-secondary border-opacity-25" style="max-height:8rem;max-width:100%;object-fit:contain;" loading="lazy"></a>';
+        html +=
+          '<div class="position-relative">' +
+          inner +
+          '<button type="button" class="btn btn-sm btn-outline-danger position-absolute top-0 end-0 p-0 lh-1 admin-issue-rm-media" data-media-id="' +
+          mid +
+          '" title="Удалить файл">&times;</button></div>';
+      });
+      html += '</div>';
+      return html;
+    }
+
+    function syncEditingToState() {
+      if (!issuesEditor) return;
+      issuesEditor.querySelectorAll('tr[data-issue-index]').forEach((tr) => {
+        const idx = Number(tr.dataset.issueIndex);
+        const ta = tr.querySelector('textarea.issue-input');
+        if (ta && Number.isFinite(idx)) issuesState[idx] = ta.value;
+      });
+    }
+
+    function payloadIssues() {
+      syncEditingToState();
+      return issuesState.map((s) => String(s || '').trim()).filter(Boolean);
+    }
+
+    function schedulePushProblemToServer() {
+      clearTimeout(problemPushTimer);
+      problemPushTimer = setTimeout(pushProblemToServer, 500);
+    }
+
+    async function pushProblemToServer() {
+      if (!problemTextarea) return;
+      const v = problemTextarea.value;
+      if (v === lastRemoteProblemDescription) return;
+      try {
+        const r = await fetch(problemSaveUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+          body: JSON.stringify({ problem_description: v }),
+        });
+        const data = await r.json();
+        if (!r.ok || !data.ok) return;
+        lastRemoteProblemDescription = v;
+        if (data.problem_hash) window.adminApptProblemHash = data.problem_hash;
+      } catch (e) {}
+    }
+
+    function syncProblemTextarea(options) {
+      if (!problemTextarea) return;
+      problemTextarea.value = buildProblemText(payloadIssues());
+      if (options && options.skipPush) {
+        lastRemoteProblemDescription = problemTextarea.value;
+        return;
+      }
+      schedulePushProblemToServer();
+    }
+
+    function renderIssuesEditorFromState() {
+      if (!issuesEditor) return;
+      let body = '';
+      issuesState.forEach((text, i) => {
+        const n = i + 1;
+        const editing = !!editingMask[i];
+        const esc = escapeHtml(text);
+        const canDelete = issuesState.length > 1;
+        body += '<tr data-issue-index="' + i + '">';
+        body += '<td class="ps-3 text-info align-top">' + n + '</td>';
+        body += '<td class="align-top">';
+        if (editing) {
+          body +=
+            '<textarea class="form-control form-control-sm bg-dark text-white border-secondary border-opacity-50 mono issue-input" rows="2" placeholder="Опишите неисправность...">' +
+            esc +
+            '</textarea>';
+        } else {
+          body += '<div class="text-white issue-view py-1" style="white-space:pre-wrap;">' + esc + '</div>';
+        }
+        body += issueMediaStripHtml(i);
+        body += '</td>';
+        body += '<td class="pe-3 text-end text-nowrap align-top">';
+        if (editing) {
+          body +=
+            '<button type="button" class="btn btn-sm btn-outline-success border-0 issue-save" data-index="' +
+            i +
+            '" title="Сохранить"><i class="bi bi-save"></i></button>';
+        } else {
+          body +=
+            '<button type="button" class="btn btn-sm btn-outline-info border-0 issue-edit" data-index="' +
+            i +
+            '" title="Править"><i class="bi bi-pencil"></i></button>';
+        }
+        if (canDelete) {
+          body +=
+            '<button type="button" class="btn btn-sm btn-outline-danger border-0 issue-remove" data-index="' +
+            i +
+            '" title="Удалить"><i class="bi bi-trash"></i></button>';
+        }
+        body += '</td></tr>';
+      });
+      issuesEditor.innerHTML =
+        '<div class="table-responsive">' +
+        '<table class="table table-dark table-hover table-sm align-middle mb-0 mono small border border-secondary border-opacity-25 rounded overflow-hidden">' +
+        '<thead class="text-secondary border-secondary border-opacity-25">' +
+        '<tr><th class="ps-3" style="width:3.25rem;">№</th><th>ОПИСАНИЕ</th><th class="pe-3 text-end" style="width:6.75rem;"></th></tr>' +
+        '</thead><tbody>' +
+        body +
+        '</tbody></table></div>';
+    }
+
+    function initIssuesFromTextarea() {
+      issuesState = parseIssues(problemTextarea ? problemTextarea.value : '');
+      if (!issuesState.length) issuesState = [''];
+      editingMask = issuesState.map(() => false);
+      if (issuesState.length === 1 && !String(issuesState[0] || '').trim()) {
+        editingMask[0] = true;
+      }
+      renderIssuesEditorFromState();
+      syncProblemTextarea({ skipPush: true });
+    }
+
+    if (problemTextarea && issuesEditor) {
+      initIssuesFromTextarea();
+
+      issuesEditor.addEventListener('input', (e) => {
+        if (e.target && e.target.matches && e.target.matches('textarea.issue-input')) {
+          syncEditingToState();
+          syncProblemTextarea();
+        }
+      });
+
+      issuesEditor.addEventListener('click', async (e) => {
+        const rmMedia = e.target.closest('.admin-issue-rm-media');
+        if (rmMedia) {
+          e.preventDefault();
+          const mid = Number(rmMedia.dataset.mediaId || '0');
+          if (!mid) return;
+          rmMedia.disabled = true;
+          try {
+            const url = issueMediaDeleteUrlTpl.replace(/\/0\/delete-json$/, '/' + mid + '/delete-json');
+            const r = await fetch(url, {
+              method: 'POST',
+              headers: { 'X-CSRFToken': csrfToken },
+            });
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok || !data.ok) return;
+            if (data.issue_media_hash) window.adminApptIssueMediaHash = data.issue_media_hash;
+            window.__adminIssueMediaSlots = Array.isArray(data.issue_media) ? data.issue_media : [];
+            renderIssuesEditorFromState();
+          } catch (err) {
+          } finally {
+            rmMedia.disabled = false;
+          }
+          return;
+        }
+        const del = e.target.closest('.issue-remove');
+        if (del) {
+          syncEditingToState();
+          const idx = Number(del.dataset.index || '0');
+          issuesState.splice(idx, 1);
+          editingMask.splice(idx, 1);
+          if (!issuesState.length) {
+            issuesState = [''];
+            editingMask = [true];
+          }
+          renderIssuesEditorFromState();
+          syncProblemTextarea();
+          return;
+        }
+        const editBtn = e.target.closest('.issue-edit');
+        if (editBtn) {
+          syncEditingToState();
+          const idx = Number(editBtn.dataset.index || '0');
+          editingMask = issuesState.map((_, j) => j === idx);
+          renderIssuesEditorFromState();
+          return;
+        }
+        const saveBtn = e.target.closest('.issue-save');
+        if (saveBtn) {
+          syncEditingToState();
+          editingMask = issuesState.map(() => false);
+          renderIssuesEditorFromState();
+          syncProblemTextarea();
+          if (issuesStatusEl) {
+            issuesStatusEl.textContent = 'OK';
+            issuesStatusEl.classList.toggle('text-danger', false);
+            issuesStatusEl.classList.toggle('text-secondary', true);
+            window.setTimeout(() => {
+              if (issuesStatusEl) issuesStatusEl.textContent = '';
+            }, 900);
+          }
+        }
+      });
+    }
+
+    if (issuesAddBtn) {
+      issuesAddBtn.addEventListener('click', () => {
+        if (!issuesEditor) return;
+        syncEditingToState();
+        issuesState.push('');
+        editingMask = issuesState.map((_, j) => j === issuesState.length - 1);
+        renderIssuesEditorFromState();
+        syncProblemTextarea();
+      });
+    }
+
+    const searchInput = document.getElementById('work-tree-search');
+    const statusEl = document.getElementById('work-tree-status');
+    const workTreeContainer = document.getElementById('work-tree-container');
+    const openModalBtn = document.getElementById('open-add-work-modal');
+    const modalEl = document.getElementById('addWorkModal');
+
+    const tbody = document.getElementById('appointment-items-tbody');
+    const countEl = document.getElementById('appointment-items-count');
+    const emptyRow = document.getElementById('appointment-items-empty-row');
+    const totalEl = document.getElementById('appointment-items-total');
+    const totalDurationEl = document.getElementById('appointment-items-total-duration');
+
+    function setStatus(text, isError) {
+      if (!statusEl) return;
+      statusEl.textContent = text || '';
+      statusEl.classList.toggle('text-danger', !!isError);
+      statusEl.classList.toggle('text-secondary', !isError);
+    }
+
+    function normalizeQuery(q) {
+      return (q || '').trim().toLowerCase();
+    }
+
+    function escapeHtml(s) {
+      return String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function renderWorkTree(sections) {
+      const out = [];
+      (sections || []).forEach((section) => {
+        const secId = Number(section.id || 0);
+        out.push(`<div class="mb-2 wt-section" data-wt-section="${secId}">`);
+        out.push(
+          `<button class="btn btn-sm btn-outline-info w-100 text-start mono" type="button" data-bs-toggle="collapse" data-bs-target="#wt-sec-${secId}">` +
+          `<i class="bi bi-diagram-3 me-2"></i>${escapeHtml(section.title)}` +
+          `</button>`
+        );
+        out.push(`<div class="collapse show mt-2" id="wt-sec-${secId}">`);
+
+        const cats = section.categories || [];
+        if (!cats.length) {
+          out.push(`<div class="text-secondary mono small ms-2">КАТЕГОРИЙ_НЕТ</div>`);
+        }
+
+        cats.forEach((cat) => {
+          const catId = Number(cat.id || 0);
+          out.push(`<div class="ms-2 mb-2 wt-category" data-wt-category="${catId}">`);
+          out.push(
+            `<button class="btn btn-sm btn-outline-warning w-100 text-start mono small" type="button" data-bs-toggle="collapse" data-bs-target="#wt-cat-${catId}">` +
+            `<i class="bi bi-folder2 me-2"></i>${escapeHtml(cat.title)}` +
+            `</button>`
+          );
+          out.push(`<div class="collapse show mt-2" id="wt-cat-${catId}">`);
+          out.push(`<div class="list-group list-group-flush">`);
+
+          const works = cat.works || [];
+          if (!works.length) {
+            out.push(`<div class="list-group-item bg-dark text-secondary border-secondary border-opacity-25 mono small">ПУСТО</div>`);
+          }
+
+          works.forEach((w) => {
+            const workId = Number(w.id || 0);
+            const wTitle = escapeHtml(w.title);
+            const dur = Number(w.duration_min || 0);
+            const price = Number(w.base_price || 0);
+            const search = escapeHtml(`${section.title || ''} ${cat.title || ''} ${w.title || ''}`.toLowerCase());
+            out.push(
+              `<button type="button" class="list-group-item list-group-item-action bg-dark text-white border-secondary border-opacity-25 d-flex justify-content-between align-items-center wt-work" data-work-id="${workId}" data-search="${search}">` +
+              `<span class="mono small">&gt; ${wTitle}</span>` +
+              `<span class="d-flex gap-2 align-items-center">` +
+              `<span class="badge border border-secondary text-secondary bg-secondary bg-opacity-10 border-opacity-25 mono">${dur} МИН</span>` +
+              `<span class="badge border border-success text-success bg-success bg-opacity-10 border-opacity-25 mono">${price} РУБ</span>` +
+              `<span class="badge bg-info text-dark mono">+</span>` +
+              `</span>` +
+              `</button>`
+            );
+          });
+
+          out.push(`</div></div></div>`);
+        });
+
+        out.push(`</div></div>`);
+      });
+      return out.join('');
+    }
+
+    async function refreshWorkTreeFromDb() {
+      if (!workTreeContainer) return;
+      setStatus('ЗАГРУЗКА...', false);
+      const response = await fetch(treeUrl, { cache: 'no-store' });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.message || 'Не удалось загрузить список услуг');
+      workTreeContainer.innerHTML = renderWorkTree(data.sections || []);
+      refreshVisibility();
+      setStatus('', false);
+    }
+
+    function refreshVisibility() {
+      const q = normalizeQuery(searchInput ? searchInput.value : '');
+      let shown = 0;
+
+      const workButtons = Array.from((workTreeContainer || document).querySelectorAll('.wt-work'));
+      const categoryEls = Array.from((workTreeContainer || document).querySelectorAll('.wt-category'));
+      const sectionEls = Array.from((workTreeContainer || document).querySelectorAll('.wt-section'));
+
+      workButtons.forEach((btn) => {
+        const hay = btn.dataset.search || '';
+        const ok = !q || hay.includes(q);
+        btn.style.display = ok ? '' : 'none';
+        if (ok) shown += 1;
+      });
+
+      categoryEls.forEach((cat) => {
+        const any = cat.querySelectorAll('.wt-work:not([style*="display: none"])').length > 0;
+        cat.style.display = any ? '' : 'none';
+      });
+
+      sectionEls.forEach((sec) => {
+        const any = sec.querySelectorAll('.wt-category:not([style*="display: none"])').length > 0;
+        sec.style.display = any ? '' : 'none';
+      });
+
+      setStatus(q ? `НАЙДЕНО: ${shown}` : '');
+    }
+
+    if (searchInput) {
+      searchInput.addEventListener('input', refreshVisibility);
+      refreshVisibility();
+    }
+
+    if (openModalBtn) {
+      openModalBtn.addEventListener('click', async () => {
+        try {
+          await refreshWorkTreeFromDb();
+        } catch (e) {
+          setStatus(e.message || 'Ошибка', true);
+        }
+      });
+    }
+
+    async function addWork(workId) {
+      setStatus('ДОБАВЛЕНИЕ...', false);
+      const response = await fetch(addUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify({ work_id: Number(workId) })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || 'Не удалось добавить работу');
+      }
+      return data;
+    }
+
+    function incrementCount() {
+      if (!countEl) return;
+      const n = Number(countEl.textContent || '0') || 0;
+      countEl.textContent = String(n + 1);
+    }
+
+    function ensureNotEmpty() {
+      if (emptyRow && emptyRow.parentNode) {
+        emptyRow.parentNode.removeChild(emptyRow);
+      }
+    }
+
+    function coeffUrl(itemId) {
+      return coeffUrlTemplate.replace(/0$/, String(itemId));
+    }
+
+    function extraUrl(itemId) {
+      return extraUrlTemplate.replace(/0$/, String(itemId));
+    }
+
+    function setInputInvalid(input, isInvalid) {
+      if (!input) return;
+      input.classList.toggle('is-invalid', !!isInvalid);
+    }
+
+    async function saveCoeffs(itemId, k1, k2) {
+      const response = await fetch(coeffUrl(itemId), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify({ k1: Number(k1), k2: Number(k2) })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.message || 'Ошибка');
+      return data;
+    }
+
+    async function saveExtra(itemId, extra) {
+      const response = await fetch(extraUrl(itemId), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify({ extra: String(extra || '') })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.message || 'Ошибка');
+      return data;
+    }
+
+    function formatRub(n) {
+      const x = Number(n || 0) || 0;
+      return String(Math.round(x)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    }
+
+    function formatDuration(n) {
+      const x = Number(n || 0) || 0;
+      const total = Math.round(x);
+      const h = Math.floor(total / 60);
+      const m = total % 60;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+
+    function refreshHeaderTotal() {
+      if (!totalEl || !tbody) return;
+      let sum = 0;
+      const rows = Array.from(tbody.querySelectorAll('tr[data-base-price]'));
+      rows.forEach((row) => {
+        if ((row.dataset.declined || '0') === '1') return;
+        const basePrice = Number(row.dataset.basePrice || '0') || 0;
+        const qty = Number(row.dataset.qty || '1') || 1;
+        const k2Input = row.querySelector('.appt-k2');
+        const k2 = k2Input ? Number(k2Input.value || '1') : 1;
+        sum += Math.round(basePrice * (Number.isFinite(k2) ? k2 : 1) * qty);
+      });
+      totalEl.textContent = formatRub(sum);
+    }
+
+    function refreshHeaderTotalDuration() {
+      if (!totalDurationEl || !tbody) return;
+      let sum = 0;
+      const rows = Array.from(tbody.querySelectorAll('tr[data-base-duration]'));
+      rows.forEach((row) => {
+        if ((row.dataset.declined || '0') === '1') return;
+        const baseDuration = Number(row.dataset.baseDuration || '0') || 0;
+        const qty = Number(row.dataset.qty || '1') || 1;
+        const k1Input = row.querySelector('.appt-k1');
+        const k1 = k1Input ? Number(k1Input.value || '1') : 1;
+        sum += Math.round(baseDuration * (Number.isFinite(k1) ? k1 : 1) * qty);
+      });
+      totalDurationEl.textContent = formatDuration(sum);
+    }
+
+    function computeTotals(baseDuration, basePrice, qty, k1, k2) {
+      const bd = Number(baseDuration || 0) || 0;
+      const bp = Number(basePrice || 0) || 0;
+      const q = Number(qty || 1) || 1;
+      const kk1 = Number(k1 || 1) || 1;
+      const kk2 = Number(k2 || 1) || 1;
+      return {
+        totalDuration: Math.round(bd * kk1 * q),
+        totalPrice: Math.round(bp * kk2 * q)
+      };
+    }
+
+    function updateTotalsForRow(row) {
+      if (!row) return;
+      const baseDuration = Number(row.dataset.baseDuration || '0') || 0;
+      const basePrice = Number(row.dataset.basePrice || '0') || 0;
+      const qty = Number(row.dataset.qty || '1') || 1;
+      const k1Input = row.querySelector('.appt-k1');
+      const k2Input = row.querySelector('.appt-k2');
+      const totDurEl = row.querySelector('.appt-total-duration');
+      const totPriceEl = row.querySelector('.appt-total-price');
+      const k1 = k1Input ? Number(k1Input.value) : 1;
+      const k2 = k2Input ? Number(k2Input.value) : 1;
+      const totals = computeTotals(baseDuration, basePrice, qty, k1, k2);
+      if (totDurEl) totDurEl.textContent = formatDuration(totals.totalDuration);
+      if (totPriceEl) totPriceEl.textContent = `${totals.totalPrice} РУБ.`;
+      refreshHeaderTotal();
+      refreshHeaderTotalDuration();
+    }
+
+    function appendRow(itemId, title, qty, durationMin, priceRub, k1, k2, extra, totalDuration, totalPrice) {
+      if (!tbody) return;
+      const tr = document.createElement('tr');
+      tr.dataset.itemId = String(itemId || '');
+      tr.dataset.baseDuration = String(durationMin || 0);
+      tr.dataset.basePrice = String(priceRub || 0);
+      tr.dataset.qty = String(qty || 1);
+      tr.dataset.declined = '0';
+      const deleteUrl = deleteUrlTemplate.replace(/0$/, String(itemId));
+      tr.innerHTML = `
+        <td class="ps-4">> ${title}</td>
+        <td style="width: 220px;">
+          <input class="form-control form-control-sm bg-transparent border-0 border-bottom border-secondary border-opacity-25 text-white mono smaller p-0 appt-extra"
+            type="text" maxlength="255" value="${extra || ''}" data-item-id="${itemId}">
+        </td>
+        <td class="text-info">${formatDuration(durationMin)}</td>
+        <td style="width: 90px;">
+          <input class="form-control form-control-sm bg-transparent border-0 border-bottom border-secondary border-opacity-25 text-white mono smaller p-0 appt-k1"
+            type="number" min="0.1" step="0.1" inputmode="decimal" value="${k1}" data-item-id="${itemId}">
+        </td>
+        <td class="appt-total-duration text-info">${formatDuration(totalDuration)}</td>
+        <td class="neon-text-blue">${priceRub} РУБ.</td>
+        <td style="width: 90px;">
+          <input class="form-control form-control-sm bg-transparent border-0 border-bottom border-secondary border-opacity-25 text-white mono smaller p-0 appt-k2"
+            type="number" min="0.1" step="0.1" inputmode="decimal" value="${k2}" data-item-id="${itemId}">
+        </td>
+        <td class="appt-total-price neon-text-blue">${Number(totalPrice || 0)} РУБ.</td>
+        <td class="text-end pe-4">
+          <form action="${deleteUrl}" method="POST" class="d-inline">
+            <input type="hidden" name="csrf_token" value="${csrfToken}">
+            <button type="submit" class="btn btn-sm btn-outline-danger p-1">
+              <i class="bi bi-trash"></i>
+            </button>
+          </form>
+        </td>
+      `;
+      tbody.appendChild(tr);
+      refreshHeaderTotal();
+      refreshHeaderTotalDuration();
+    }
+
+    function applyDeclinedState(row, declined) {
+      if (!row) return;
+      row.dataset.declined = declined ? '1' : '0';
+      const tds = Array.from(row.querySelectorAll('td'));
+      tds.forEach((td, idx) => {
+        if (idx === tds.length - 1) return;
+        td.classList.toggle('text-decoration-line-through', declined);
+        td.classList.toggle('text-secondary', declined);
+        const input = td.querySelector('input');
+        if (input) {
+          input.classList.toggle('text-decoration-line-through', declined);
+          input.classList.toggle('text-secondary', declined);
+        }
+      });
+    }
+
+    async function pollClientDecisions() {
+      if (document.visibilityState !== 'visible') return;
+      const response = await fetch(itemsStatusUrl, { cache: 'no-store' });
+      const data = await response.json();
+      if (!response.ok || !data.ok) return;
+
+      const items = data.items || [];
+      if (tbody) {
+        items.forEach((it) => {
+          const id = Number(it.id || 0);
+          if (!id) return;
+          const row = tbody.querySelector(`tr[data-item-id="${String(id)}"]`);
+          applyDeclinedState(row, !!it.declined_by_client);
+        });
+      }
+
+      if (data.problem_hash && data.problem_hash !== window.adminApptProblemHash) {
+        if (!(issuesEditor && issuesEditor.contains(document.activeElement))) {
+          window.adminApptProblemHash = data.problem_hash;
+          if (problemTextarea) {
+            problemTextarea.value = data.problem_description || '';
+            initIssuesFromTextarea();
+          }
+        }
+      }
+
+      if (data.issue_media_hash && data.issue_media_hash !== window.adminApptIssueMediaHash) {
+        window.adminApptIssueMediaHash = data.issue_media_hash;
+        window.__adminIssueMediaSlots = Array.isArray(data.issue_media) ? data.issue_media : [];
+        if (!(issuesEditor && issuesEditor.contains(document.activeElement))) {
+          renderIssuesEditorFromState();
+        }
+      }
+
+      const winField = document.getElementById('win_number');
+      if (winField && data.win_number !== undefined && document.activeElement !== winField) {
+        const next = data.win_number || '';
+        if (winField.value !== next) {
+          winField.value = next;
+        }
+      }
+
+      refreshHeaderTotal();
+      refreshHeaderTotalDuration();
+    }
+
+    if (tbody) {
+      tbody.addEventListener('input', (e) => {
+        const target = e.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        if (!target.classList.contains('appt-k1') && !target.classList.contains('appt-k2')) return;
+        const row = target.closest('tr');
+        updateTotalsForRow(row);
+      });
+
+      tbody.addEventListener('change', async (e) => {
+        const target = e.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        const isCoeff = target.classList.contains('appt-k1') || target.classList.contains('appt-k2');
+        const isExtra = target.classList.contains('appt-extra');
+        if (!isCoeff && !isExtra) return;
+
+        const itemId = Number(target.dataset.itemId || '0');
+        if (!itemId) return;
+
+        const row = target.closest('tr');
+        if (!row) return;
+        if (isCoeff) {
+          const k1Input = row.querySelector('.appt-k1');
+          const k2Input = row.querySelector('.appt-k2');
+
+          const k1 = Number(k1Input && k1Input.value);
+          const k2 = Number(k2Input && k2Input.value);
+
+          try {
+            const data = await saveCoeffs(itemId, k1, k2);
+            if (k1Input) k1Input.value = String(data.k1);
+            if (k2Input) k2Input.value = String(data.k2);
+            const totDurEl = row.querySelector('.appt-total-duration');
+            const totPriceEl = row.querySelector('.appt-total-price');
+            if (totDurEl) totDurEl.textContent = formatDuration(data.total_duration);
+            if (totPriceEl) totPriceEl.textContent = `${data.total_price} РУБ.`;
+            setInputInvalid(k1Input, false);
+            setInputInvalid(k2Input, false);
+            refreshHeaderTotal();
+          } catch (err) {
+            setInputInvalid(target, true);
+          }
+          return;
+        }
+
+        if (isExtra) {
+          try {
+            const data = await saveExtra(itemId, target.value);
+            target.value = String(data.extra || '');
+            setInputInvalid(target, false);
+          } catch (err) {
+            setInputInvalid(target, true);
+          }
+        }
+      });
+    }
+
+    if (workTreeContainer) {
+      workTreeContainer.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.wt-work');
+        if (!btn) return;
+        const workId = btn.dataset.workId;
+        if (!workId) return;
+        try {
+          const res = await addWork(workId);
+          if (!res.already) {
+            ensureNotEmpty();
+            appendRow(
+              res.item_id,
+              res.title,
+              res.qty || 1,
+              res.duration_snapshot,
+              res.price_snapshot,
+              res.k1 || 1.0,
+              res.k2 || 1.0,
+              res.extra || '',
+              res.total_duration || 0,
+              res.total_price || 0
+            );
+            incrementCount();
+            setStatus('ДОБАВЛЕНО.OK', false);
+          } else {
+            setStatus('УЖЕ_ДОБАВЛЕНО', true);
+          }
+          setTimeout(() => setStatus('', false), 900);
+        } catch (err) {
+          setStatus(err.message || 'Ошибка', true);
+        }
+      });
+    }
+
+    function startClientDecisionsPolling() {
+      pollClientDecisions().catch(() => {});
+      window.setInterval(() => {
+        pollClientDecisions().catch(() => {});
+      }, 2000);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          pollClientDecisions().catch(() => {});
+        }
+      });
+    }
+
+    refreshHeaderTotal();
+    refreshHeaderTotalDuration();
+    startClientDecisionsPolling();
+  })();
+</script>
 
 <!-- Delete Confirmation Modal -->
 <div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">

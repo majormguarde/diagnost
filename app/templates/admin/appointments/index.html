@@ -28,11 +28,13 @@
               <tr>
                 <td class="ps-4">> {{ appt.id }}</td>
                 <td class="text-secondary">{{ appt.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
-                <td class="neon-text-blue fw-bold">{{ appt.start_at.strftime('%d.%m.%Y %H:%M') }}</td>
+                {% set _vad = appt.visit_display_label() %}
+                <td class="neon-text-blue fw-bold">{% if _vad %}{% if ';' in _vad %}{{ _vad.split(';')[0].strip() }} …{% else %}{{ _vad }}{% endif %}{% else %}{{ appt.start_at.strftime('%d.%m.%Y %H:%M') }}{% endif %}</td>
                 <td>
                   {% if appt.car_make %}
                     <div class="text-white">{{ appt.car_make }} {{ appt.car_model }}</div>
                     <div class="text-secondary smaller">{{ appt.car_number or 'БЕЗ_НОМЕРА.NULL' }}</div>
+                    {% if appt.win_number %}<div class="text-secondary smaller mono">WIN: {{ appt.win_number }}</div>{% endif %}
                   {% else %}
                     <span class="text-secondary opacity-50">НЕ_УКАЗАН.NULL</span>
                   {% endif %}
@@ -45,6 +47,7 @@
                 <td>
                   <span class="badge border border-opacity-25 bg-opacity-10 {{ {
                     'new': 'border-info text-info bg-info',
+                    'negotiation': 'border-primary text-primary bg-primary',
                     'confirmed': 'border-success text-success bg-success',
                     'in_progress': 'border-warning text-warning bg-warning',
                     'done': 'border-info text-info bg-info',
@@ -53,6 +56,7 @@
                   }[appt.status] }}">
                     {{ {
                       'new': 'НОВАЯ',
+                      'negotiation': 'СОГЛАСОВАНИЕ',
                       'confirmed': 'ПОДТВЕРЖДЕНА',
                       'in_progress': 'В_РАБОТЕ',
                       'done': 'ВЫПОЛНЕНА',

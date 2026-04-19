@@ -3,8 +3,8 @@
 <div class="container-fluid py-4">
   <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
     <div>
-      <span class="badge neon-border-blue text-white mono mb-2">CATEGORY_EDITOR.EXE</span>
-      <h1 class="h2 m-0 neon-text-blue mono">[ {{ "РЕДАКТИРОВАТЬ" if category.id else "ДОБАВИТЬ" }} КАТЕГОРИЮ ]</h1>
+      <span class="badge neon-border-blue text-white mono mb-2">OPERATION_CATEGORY_EDITOR.EXE</span>
+      <h1 class="h2 m-0 neon-text-blue mono">{{ "РЕДАКТИРОВАТЬ" if category.id else "ДОБАВИТЬ" }} КАТЕГОРИЮ ОПЕРАЦИИ</h1>
     </div>
     <a href="{{ url_for('admin.categories') }}" class="btn btn-outline-info mono">/назад_к_списку</a>
   </div>
@@ -13,10 +13,22 @@
     <div class="card-body p-4">
       <form method="POST" class="mono">
         {{ form.hidden_tag() }}
+        {% if next_url %}
+        <input type="hidden" name="next" value="{{ next_url }}">
+        {% endif %}
         <div class="row">
+          <div class="col-md-4 mb-4">
+            <label class="form-label text-secondary small">> УЧАСТОК</label>
+            {{ form.competency_id(class="form-select bg-dark text-white border-secondary border-opacity-50 mono") }}
+            {% if form.competency_id.errors %}
+              {% for error in form.competency_id.errors %}
+                <div class="text-danger smaller mt-1">{{ error }}</div>
+              {% endfor %}
+            {% endif %}
+          </div>
           <div class="col-md-8 mb-4">
-            <label class="form-label text-secondary small">> НАЗВАНИЕ_КАТЕГОРИИ</label>
-            {{ form.title(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Компьютерная диагностика") }}
+            <label class="form-label text-secondary small">> НАЗВАНИЕ_КАТЕГОРИИ_ОПЕРАЦИИ</label>
+            {{ form.title(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Диагностика двигателя") }}
             {% if form.title.errors %}
               {% for error in form.title.errors %}
                 <div class="text-danger smaller mt-1">{{ error }}</div>
@@ -29,7 +41,7 @@
           <button type="submit" class="btn btn-info px-4 py-2 fw-bold">
             <i class="bi bi-save me-2"></i>SAVE.EXE
           </button>
-          <a href="{{ url_for('admin.categories') }}" class="btn btn-outline-secondary px-4 py-2">
+          <a href="{{ next_url or url_for('admin.work_tree') }}" class="btn btn-outline-secondary px-4 py-2">
             CANCEL.SH
           </a>
         </div>

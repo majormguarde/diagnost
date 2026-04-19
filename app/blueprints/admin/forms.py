@@ -1,7 +1,7 @@
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileField, FileAllowed, FileRequired
 from wtforms import StringField, TextAreaField, BooleanField, IntegerField, SelectMultipleField, SelectField, SubmitField, MultipleFileField, PasswordField, FloatField, DateTimeLocalField
-from wtforms.validators import DataRequired, Optional, EqualTo, Length
+from wtforms.validators import DataRequired, Optional, EqualTo, Length, NumberRange, Email, ValidationError
 
 class MasterForm(FlaskForm):
     name = StringField("Имя мастера", validators=[DataRequired()])
@@ -9,11 +9,49 @@ class MasterForm(FlaskForm):
     description = TextAreaField("Описание", validators=[Optional()])
     is_active = BooleanField("Активен (Мастер доступен)", default=True)
     payout_percent = IntegerField("Процент от выполненных работ", validators=[Optional()], default=100)
-    competency_ids = SelectMultipleField("Специализация", coerce=int)
+    competency_ids = SelectMultipleField("Участки", coerce=int)
     submit = SubmitField("Сохранить")
 
+class ClientForm(FlaskForm):
+    name = StringField("Имя клиента", validators=[DataRequired(), Length(min=2, max=120)])
+    phone = StringField("Логин (телефон)", validators=[DataRequired(), Length(min=6, max=32)])
+    client_whatsapp = StringField("WhatsApp (номер)", validators=[Optional(), Length(max=32)])
+    client_telegram = StringField("Telegram (ник без @)", validators=[Optional(), Length(max=64)])
+    client_email = StringField("Email", validators=[Optional(), Email(), Length(max=120)])
+    password = PasswordField("Новый пароль", validators=[Optional(), Length(min=6, max=128)])
+    password_confirm = PasswordField(
+        "Подтверждение пароля",
+        validators=[Optional()],
+    )
+    is_active = BooleanField("Активен", default=True)
+    submit = SubmitField("Сохранить")
+
+    def validate_password_confirm(self, field):
+        """EqualTo ломается при пустом пароле / автозаполнении (None vs '')."""
+        pw = (self.password.data or "").strip()
+        conf = (field.data or "").strip()
+        if conf and not pw:
+            raise ValidationError("Очистите поле подтверждения или введите новый пароль.")
+        if pw and conf != pw:
+            raise ValidationError("Пароли должны совпадать.")
+
+
+class ClientCreateForm(FlaskForm):
+    name = StringField("Имя клиента", validators=[DataRequired(), Length(min=2, max=120)])
+    phone = StringField("Логин (телефон)", validators=[DataRequired(), Length(min=6, max=32)])
+    client_whatsapp = StringField("WhatsApp (номер)", validators=[Optional(), Length(max=32)])
+    client_telegram = StringField("Telegram (ник без @)", validators=[Optional(), Length(max=64)])
+    client_email = StringField("Email", validators=[Optional(), Email(), Length(max=120)])
+    password = PasswordField("Пароль", validators=[DataRequired(), Length(min=6, max=128)])
+    password_confirm = PasswordField(
+        "Подтверждение пароля",
+        validators=[DataRequired(), EqualTo("password", message="Пароли должны совпадать")],
+    )
+    is_active = BooleanField("Активен", default=True)
+    submit = SubmitField("Создать клиента")
+
 class CompetencyForm(FlaskForm):
-    title = StringField("Название специализации", validators=[DataRequired()])
+    title = StringField("Название участка", validators=[DataRequired()])
     submit = SubmitField("Сохранить")
 
 class AppointmentForm(FlaskForm):
@@ -21,6 +59,7 @@ class AppointmentForm(FlaskForm):
     start_at = DateTimeLocalField("Начало приема", format='%Y-%m-%dT%H:%M', validators=[DataRequired()])
     status = SelectField("Статус", choices=[
         ("new", "Новая"),
+        ("negotiation", "Согласование"),
         ("confirmed", "Подтверждена"),
         ("in_progress", "В работе"),
         ("done", "Выполнена"),
@@ -33,6 +72,7 @@ class AppointmentForm(FlaskForm):
     car_model = StringField("Модель", validators=[Optional()])
     car_year = IntegerField("Год выпуска", validators=[Optional()])
     car_number = StringField("Гос.номер", validators=[Optional()])
+    win_number = StringField("WIN номер", validators=[Optional(), Length(max=32)])
     
     # Описание проблемы
     problem_description = TextAreaField("Описание неисправностей", validators=[Optional()])
@@ -40,15 +80,16 @@ class AppointmentForm(FlaskForm):
     submit = SubmitField("Сохранить")
 
 class WorkForm(FlaskForm):
-    title = StringField("Название специализации", validators=[DataRequired()])
-    category_id = SelectField("Категория", coerce=int, validators=[DataRequired()])
+    title = StringField("Название операции", validators=[DataRequired()])
+    category_id = SelectField("Категория операции", coerce=int, validators=[DataRequired()])
     duration_min = IntegerField("Длительность (мин)", validators=[DataRequired()], default=60)
     base_price = IntegerField("Базовая цена", validators=[Optional()])
     is_active = BooleanField("Активна", default=True)
     submit = SubmitField("Сохранить")
 
 class CategoryForm(FlaskForm):
-    title = StringField("Название категории", validators=[DataRequired()])
+    competency_id = SelectField("Участок", coerce=int, validators=[DataRequired()])
+    title = StringField("Название категории операции", validators=[DataRequired()])
     submit = SubmitField("Сохранить")
 
 class WorkOrderForm(FlaskForm):
@@ -66,12 +107,27 @@ class DocumentUploadForm(FlaskForm):
     files = MultipleFileField("Выберите файлы", validators=[DataRequired()])
     submit = SubmitField("Загрузить")
 
+class ContactSettingsForm(FlaskForm):
+    """Мессенджеры сервиса, контактный email и SMTP (страница «Связь»)."""
+    org_whatsapp = StringField("WhatsApp организации (номер)", validators=[Optional(), Length(max=32)])
+    org_telegram = StringField("Telegram организации (ник без @)", validators=[Optional(), Length(max=64)])
+    email = StringField("Email для связи", validators=[Optional(), Email(), Length(max=120)])
+    smtp_host = StringField("SMTP сервер", validators=[Optional(), Length(max=120)])
+    smtp_port = IntegerField("SMTP порт", validators=[Optional(), NumberRange(min=1, max=65535)])
+    smtp_user = StringField("SMTP логин", validators=[Optional(), Length(max=120)])
+    smtp_password = PasswordField("SMTP пароль", validators=[Optional(), Length(max=255)])
+    smtp_use_tls = BooleanField("Использовать TLS", default=True)
+    smtp_from = StringField("Адрес отправителя (From)", validators=[Optional(), Email(), Length(max=120)])
+    submit = SubmitField("Сохранить")
+
+
 class OrganizationSettingsForm(FlaskForm):
     name = StringField("Название организации", validators=[DataRequired()])
     address = StringField("Адрес", validators=[Optional()])
     phone = StringField("Телефон", validators=[Optional()])
     email = StringField("Email", validators=[Optional()])
     work_hours = StringField("Часы работы", validators=[Optional()])
+    slot_minutes = IntegerField("Интервал слота (мин)", validators=[DataRequired(), NumberRange(min=15, max=240)], default=60)
     description = TextAreaField("Описание (для сайта)", validators=[Optional()])
     latitude = FloatField("Широта (Latitude)", validators=[Optional()])
     longitude = FloatField("Долгота (Longitude)", validators=[Optional()])
@@ -122,9 +178,30 @@ class WorkOrderPartForm(FlaskForm):
     price = IntegerField("Цена за ед. (руб.)", validators=[DataRequired()])
     submit = SubmitField("Добавить запчасть")
 
+class WorkOrderDetailForm(FlaskForm):
+    title = StringField("Наименование детали", validators=[DataRequired()])
+    quantity = FloatField("Количество", default=1.0, validators=[DataRequired()])
+    unit = StringField("Ед. изм.", default="шт.")
+    price = IntegerField("Цена за ед. (руб.)", validators=[DataRequired()])
+    submit = SubmitField("Добавить деталь")
+
+class WorkOrderMaterialForm(FlaskForm):
+    title = StringField("Наименование материала", validators=[DataRequired()])
+    quantity = FloatField("Количество", default=1.0, validators=[DataRequired()])
+    unit = StringField("Ед. изм.", default="шт.")
+    price = IntegerField("Цена за ед. (руб.)", validators=[DataRequired()])
+    submit = SubmitField("Добавить материал")
+
+
+class WorkOrderAdditionalWorkForm(FlaskForm):
+    title = StringField("Наименование", validators=[DataRequired()])
+    price = IntegerField("Сумма (руб.)", validators=[DataRequired()])
+    comment = TextAreaField("Комментарий", validators=[Optional()])
+    submit = SubmitField("Добавить")
+
 class AppointmentItemForm(FlaskForm):
-    work_id = SelectField("Специализация", coerce=int, validators=[DataRequired()])
-    submit = SubmitField("Добавить специализацию")
+    work_id = SelectField("Операция", coerce=int, validators=[DataRequired()])
+    submit = SubmitField("Добавить операцию")
 
 class AdminCredentialsForm(FlaskForm):
     login = StringField("Новый логин (телефон)", validators=[DataRequired(), Length(min=5, max=20)])

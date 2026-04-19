@@ -3,8 +3,8 @@
 <div class="container-fluid py-4">
   <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
     <div>
-      <span class="badge neon-border-blue text-white mono mb-2">SPECIALIZATION_DEFINITION.CFG</span>
-      <h1 class="h2 m-0 neon-text-blue mono">[ {{ "РЕДАКТИРОВАТЬ" if work.id else "ДОБАВИТЬ" }} СПЕЦИАЛИЗАЦИЮ ]</h1>
+      <span class="badge neon-border-blue text-white mono mb-2">OPERATION_DEFINITION.CFG</span>
+      <h1 class="h2 m-0 neon-text-blue mono">{{ "РЕДАКТИРОВАТЬ" if work.id else "ДОБАВИТЬ" }} ОПЕРАЦИЮ</h1>
     </div>
     <a href="{{ url_for('admin.works') }}" class="btn btn-outline-info mono">/назад_к_списку</a>
   </div>
@@ -13,14 +13,17 @@
     <div class="card-body p-4">
       <form method="POST" class="mono">
         {{ form.hidden_tag() }}
+        {% if next_url %}
+        <input type="hidden" name="next" value="{{ next_url }}">
+        {% endif %}
         <div class="row">
           <div class="col-md-8 mb-4">
-            <label class="form-label text-secondary small">> НАЗВАНИЕ_СПЕЦИАЛИЗАЦИИ</label>
-            {{ form.title(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Компьютерная диагностика") }}
+            <label class="form-label text-secondary small">> НАЗВАНИЕ_ОПЕРАЦИИ</label>
+            {{ form.title(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Диагностика двигателя") }}
             {% for error in form.title.errors %}<span class="text-danger small">{{ error }}</span>{% endfor %}
           </div>
           <div class="col-md-4 mb-4">
-            <label class="form-label text-secondary small">> КАТЕГОРИЯ</label>
+            <label class="form-label text-secondary small">> КАТЕГОРИЯ_ОПЕРАЦИИ</label>
             {{ form.category_id(class="form-select bg-dark text-white border-secondary border-opacity-50 mono") }}
             {% for error in form.category_id.errors %}<span class="text-danger small">{{ error }}</span>{% endfor %}
           </div>
@@ -46,9 +49,9 @@
 
         <div class="d-flex gap-3 mt-4">
           <button type="submit" class="btn btn-info px-5 py-2 mono fw-bold">
-            <i class="bi bi-save me-2"></i>СОХРАНИТЬ_СПЕЦИАЛИЗАЦИЮ.EXE
+            <i class="bi bi-save me-2"></i>СОХРАНИТЬ_ОПЕРАЦИЮ.EXE
           </button>
-          <a href="{{ url_for('admin.works') }}" class="btn btn-outline-secondary px-4 py-2 mono">
+          <a href="{{ next_url or url_for('admin.work_tree') }}" class="btn btn-outline-secondary px-4 py-2 mono">
             ОТМЕНА.SH
           </a>
         </div>

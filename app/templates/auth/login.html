@@ -4,17 +4,31 @@
 {% set seo_robots = "noindex,nofollow" %}
 {% set seo_canonical = url_for('auth.login', _external=True) %}
 {% block content %}
-  <h1 class="h3 mb-3">Вход</h1>
-  <form method="post" class="card card-body" style="max-width: 520px;">
-    {{ form.hidden_tag() }}
-    <div class="mb-3">
-      {{ form.phone.label(class="form-label") }}
-      {{ form.phone(class="form-control", placeholder="+7...") }}
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-lg-5 col-md-7">
+      <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+        <div class="card-body p-4 p-md-5 bg-white text-dark">
+          <h1 class="h3 mb-4 text-dark">Вход</h1>
+          <form method="post">
+            {{ form.hidden_tag() }}
+            <div class="mb-3">
+              {{ form.phone.label(class="form-label text-dark fw-semibold") }}
+              {{ form.phone(class="form-control form-control-lg", placeholder="+7... или admin") }}
+            </div>
+            <div class="mb-4">
+              {{ form.password.label(class="form-label text-dark fw-semibold") }}
+              {{ form.password(class="form-control form-control-lg") }}
+            </div>
+            {{ form.submit(class="btn btn-primary btn-lg w-100 rounded-pill") }}
+          </form>
+          <div class="mt-4 text-center text-secondary">
+            Нет аккаунта?
+            <a href="{{ url_for('auth.register', next=request.args.get('next')) }}" class="text-decoration-none">Зарегистрироваться</a>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="mb-3">
-      {{ form.password.label(class="form-label") }}
-      {{ form.password(class="form-control") }}
-    </div>
-    {{ form.submit(class="btn btn-primary") }}
-  </form>
+  </div>
+</div>
 {% endblock %}

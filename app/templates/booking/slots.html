@@ -48,7 +48,8 @@
               <input type="hidden" name="car_model" value="{{ car_model }}">
               <input type="hidden" name="car_year" value="{{ car_year }}">
               <input type="hidden" name="car_number" value="{{ car_number }}">
-              <input type="hidden" name="problem_description" value="{{ problem_description }}">
+              <input type="hidden" name="win_number" value="{{ win_number or '' }}">
+              <textarea name="problem_description" class="d-none">{{ problem_description }}</textarea>
 
               <div class="row g-4">
                 <label class="form-label fw-bold mb-3">Доступное время начала</label>

@@ -1,0 +1,1040 @@
+{% extends "admin/admin_base.html" %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-3 border-bottom border-secondary border-opacity-25 pb-2">
+    <div>
+      <span class="badge neon-border-blue text-white mono mb-1">WORK_TREE.EXE</span>
+      <h1 class="h2 m-0 neon-text-blue mono">РАБОТЫ</h1>
+    </div>
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+      <a href="{{ url_for('admin.competency_edit', next=url_for('admin.work_tree')) }}" class="btn btn-info btn-sm mono tree-icon-btn" title="Добавить участок" aria-label="Добавить участок">
+        <i class="bi bi-plus-lg"></i>
+      </a>
+    </div>
+  </div>
+  <div id="tree-status" class="mb-2 text-secondary mono smaller">READY.NULL</div>
+  <div id="drop-indicator" class="mono smaller"></div>
+
+  <div class="work-tree-root d-flex flex-column gap-3">
+    {% for section in sections %}
+    <div
+      class="tree-card"
+      draggable="true"
+      data-node-type="competency"
+      data-node-id="{{ section.id }}"
+    >
+      <div class="tree-card-header">
+        <div class="tree-node-main">
+          <button type="button" class="tree-drag-handle btn btn-sm btn-outline-secondary mono" title="Переместить участок" aria-label="Переместить участок" data-no-drag="true">
+            <i class="bi bi-grip-vertical"></i>
+          </button>
+          <div class="tree-title">{{ section.title }}</div>
+        </div>
+        <div class="tree-actions">
+          <a href="{{ url_for('admin.competency_edit', competency_id=section.id, next=url_for('admin.work_tree')) }}" class="btn btn-sm btn-outline-info mono tree-icon-btn" title="Редактировать участок" aria-label="Редактировать участок" data-no-drag="true">
+            <i class="bi bi-pencil"></i>
+          </a>
+          <a href="{{ url_for('admin.category_edit', competency_id=section.id, next=url_for('admin.work_tree')) }}" class="btn btn-sm btn-outline-warning mono tree-icon-btn" title="Добавить категорию" aria-label="Добавить категорию" data-no-drag="true">
+            <i class="bi bi-node-plus"></i>
+          </a>
+          <button type="button" class="btn btn-sm btn-outline-danger mono tree-icon-btn delete-node-btn" title="Удалить участок" aria-label="Удалить участок" data-no-drag="true" data-node-type="competency" data-node-id="{{ section.id }}">
+            <i class="bi bi-trash"></i>
+          </button>
+          <span class="badge border border-info text-info bg-info bg-opacity-10 border-opacity-25 mono">
+            {{ (categories_by_section.get(section.id) or [])|length }}
+          </span>
+        </div>
+      </div>
+
+      <div
+        class="tree-children category-dropzone"
+        data-target-type="competency"
+        data-target-id="{{ section.id }}"
+      >
+        {% for category in categories_by_section.get(section.id, []) %}
+        <div
+          class="tree-category"
+          draggable="true"
+          data-node-type="category"
+          data-node-id="{{ category.id }}"
+        >
+          <div class="tree-category-header">
+            <div class="tree-node-main">
+              <button type="button" class="tree-drag-handle btn btn-sm btn-outline-secondary mono" title="Переместить категорию" aria-label="Переместить категорию" data-no-drag="true">
+                <i class="bi bi-grip-vertical"></i>
+              </button>
+              <div class="tree-subtitle">{{ category.title }}</div>
+            </div>
+            <div class="tree-actions">
+              <a href="{{ url_for('admin.category_edit', cat_id=category.id, next=url_for('admin.work_tree')) }}" class="btn btn-sm btn-outline-info mono tree-icon-btn" title="Редактировать категорию" aria-label="Редактировать категорию" data-no-drag="true">
+                <i class="bi bi-pencil"></i>
+              </a>
+              <a href="{{ url_for('admin.work_edit', category_id=category.id, next=url_for('admin.work_tree')) }}" class="btn btn-sm btn-outline-warning mono tree-icon-btn" title="Добавить операцию" aria-label="Добавить операцию" data-no-drag="true">
+                <i class="bi bi-plus-square"></i>
+              </a>
+              <button type="button" class="btn btn-sm btn-outline-danger mono tree-icon-btn delete-node-btn" title="Удалить категорию" aria-label="Удалить категорию" data-no-drag="true" data-node-type="category" data-node-id="{{ category.id }}">
+                <i class="bi bi-trash"></i>
+              </button>
+              <span class="badge border border-warning text-warning bg-warning bg-opacity-10 border-opacity-25 mono">
+                {{ (operations_by_category.get(category.id) or [])|length }}
+              </span>
+            </div>
+          </div>
+
+          <div
+            class="tree-children work-dropzone"
+            data-target-type="category"
+            data-target-id="{{ category.id }}"
+          >
+            {% for operation in operations_by_category.get(category.id, []) %}
+            <div
+              class="tree-work"
+              draggable="true"
+              data-node-type="work"
+              data-node-id="{{ operation.id }}"
+            >
+              <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+                <div class="tree-node-main">
+                  <button type="button" class="tree-drag-handle btn btn-sm btn-outline-secondary mono" title="Переместить операцию" aria-label="Переместить операцию" data-no-drag="true">
+                    <i class="bi bi-grip-vertical"></i>
+                  </button>
+                  <div class="text-white">{{ operation.title }}</div>
+                </div>
+                <div class="d-flex gap-1 flex-wrap align-items-center">
+                  <a href="{{ url_for('admin.work_edit', work_id=operation.id, next=url_for('admin.work_tree')) }}" class="btn btn-sm btn-outline-info mono tree-icon-btn" title="Редактировать операцию" aria-label="Редактировать операцию" data-no-drag="true">
+                    <i class="bi bi-pencil"></i>
+                  </a>
+                  <button type="button" class="btn btn-sm btn-outline-danger mono tree-icon-btn delete-node-btn" title="Удалить операцию" aria-label="Удалить операцию" data-no-drag="true" data-node-type="work" data-node-id="{{ operation.id }}">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                  <label class="badge-inline badge-inline-duration border border-secondary text-secondary bg-secondary bg-opacity-10 border-opacity-25 mono">
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value="{{ operation.duration_min }}"
+                      class="inline-badge-input"
+                      data-inline-field="duration_min"
+                      data-work-id="{{ operation.id }}"
+                      data-no-drag="true"
+                      aria-label="Длительность"
+                    >
+                    <span>МИН</span>
+                  </label>
+                  <label class="badge-inline badge-inline-price border border-success text-success bg-success bg-opacity-10 border-opacity-25 mono">
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value="{{ operation.base_price or 0 }}"
+                      class="inline-badge-input"
+                      data-inline-field="base_price"
+                      data-work-id="{{ operation.id }}"
+                      data-no-drag="true"
+                      aria-label="Стоимость"
+                    >
+                    <span>РУБ</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            {% else %}
+            <div class="tree-empty mono text-secondary">ПЕРЕТАЩИТЕ СЮДА ОПЕРАЦИИ</div>
+            {% endfor %}
+          </div>
+        </div>
+        {% else %}
+        <div class="tree-empty mono text-secondary">ПЕРЕТАЩИТЕ СЮДА КАТЕГОРИИ ОПЕРАЦИЙ</div>
+        {% endfor %}
+      </div>
+    </div>
+    {% else %}
+    <div class="card bg-dark neon-border-blue shadow-lg">
+      <div class="card-body py-5 text-center text-secondary mono">
+        ДЕРЕВО_ПУСТО.NULL
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<style>
+  .work-tree-root {
+    min-width: 0;
+    gap: 0.75rem !important;
+  }
+  .tree-card,
+  .tree-category,
+  .tree-work {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 14px;
+    transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+  }
+  .tree-card {
+    padding: 0.55rem 0.7rem;
+  }
+  .tree-category {
+    padding: 0.45rem 0.6rem;
+  }
+  .tree-work {
+    padding: 0.4rem 0.55rem;
+  }
+  .tree-card-header,
+  .tree-category-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.45rem;
+  }
+  .tree-title {
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.94rem;
+  }
+  .tree-subtitle {
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.88rem;
+  }
+  .tree-node-main {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+  }
+  .tree-children {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding-left: 0.55rem;
+    border-left: 1px dashed rgba(0, 243, 255, 0.18);
+    margin-left: 0.25rem;
+  }
+  .tree-empty {
+    padding: 0.5rem 0.6rem;
+    border: 1px dashed rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    font-size: 0.72rem;
+  }
+  .tree-actions {
+    display: flex;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .tree-actions .btn {
+    padding: 0.18rem 0.35rem;
+    font-size: 0.68rem;
+    line-height: 1.2;
+  }
+  .tree-actions .badge,
+  .tree-work .badge {
+    padding: 0.24rem 0.35rem;
+    font-size: 0.66rem;
+  }
+  .tree-icon-btn {
+    width: 1.65rem;
+    height: 1.65rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .tree-drag-handle {
+    width: 1.65rem;
+    height: 1.65rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    flex: 0 0 auto;
+  }
+  .tree-drag-handle:active {
+    cursor: grabbing;
+  }
+  .badge-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.16rem 0.32rem;
+    border-radius: 999px;
+    font-size: 0.66rem;
+  }
+  .inline-badge-input {
+    width: 3.1rem;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: right;
+    padding: 0;
+    margin: 0;
+  }
+  .inline-badge-input::-webkit-outer-spin-button,
+  .inline-badge-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .inline-badge-input[type=number] {
+    -moz-appearance: textfield;
+  }
+  .inline-badge-input.is-saving {
+    opacity: 0.6;
+  }
+  .inline-badge-input.is-error {
+    color: #ff6b6b;
+  }
+  [data-node-type] a,
+  [data-node-type] input,
+  [data-node-type] button,
+  [data-node-type] label {
+    -webkit-user-drag: none;
+  }
+  #drop-indicator {
+    position: fixed;
+    z-index: 9999;
+    pointer-events: none;
+    padding: 0.22rem 0.5rem;
+    border: 1px solid rgba(0, 243, 255, 0.35);
+    border-radius: 999px;
+    background: rgba(0, 243, 255, 0.08);
+    color: #b6ffff;
+    display: none;
+    transform: translate(-50%, -140%);
+  }
+  #drop-indicator.show {
+    display: block;
+  }
+  .ghost-placeholder {
+    border: 1px dashed rgba(0, 243, 255, 0.4);
+    background: rgba(0, 243, 255, 0.06);
+    border-radius: 10px;
+    animation: ghostPulse 1s ease-in-out infinite;
+  }
+  .ghost-competency { height: 40px; margin: 4px 0; }
+  .ghost-category { height: 34px; margin: 3px 0; }
+  .ghost-work { height: 28px; margin: 3px 0; }
+  @keyframes ghostPulse {
+    0% { opacity: 0.5; }
+    50% { opacity: 0.9; }
+    100% { opacity: 0.5; }
+  }
+  .dragging {
+    opacity: 0.45;
+  }
+  .drop-inside {
+    border-color: rgba(0, 243, 255, 0.75) !important;
+    background: rgba(0, 243, 255, 0.08) !important;
+  }
+  .drop-before {
+    box-shadow: inset 0 4px 0 rgba(0, 243, 255, 0.75);
+  }
+  .drop-after {
+    box-shadow: inset 0 -4px 0 rgba(0, 243, 255, 0.75);
+  }
+  .drop-allowed {
+    outline: 2px solid rgba(0, 243, 255, 0.4) !important;
+    outline-offset: 2px;
+  }
+  .drop-allowed.drop-allowed-category { outline-color: rgba(255, 193, 7, 0.5); }
+  .drop-allowed.drop-allowed-work { outline-color: rgba(40, 167, 69, 0.5); }
+  .drop-allowed:hover {
+    outline-width: 3px !important;
+    outline-color: rgba(0, 243, 255, 0.7) !important;
+  }
+  .drop-allowed.drop-allowed-category:hover { outline-color: rgba(255, 193, 7, 0.7) !important; }
+  .drop-allowed.drop-allowed-work:hover { outline-color: rgba(40, 167, 69, 0.7) !important; }
+  @keyframes nodeRoller {
+    0%   { transform: translateX(-18px); opacity: 0; }
+    40%  { transform: translateX(4px);  opacity: 1; }
+    70%  { transform: translateX(-3px); }
+    100% { transform: translateX(0);    opacity: 1; }
+  }
+  .node-roller {
+    animation: nodeRoller 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .tree-drag-handle {
+    cursor: grab;
+    transition: all 0.2s ease;
+  }
+  .tree-drag-handle:hover {
+    background-color: rgba(0, 243, 255, 0.1) !important;
+    border-color: rgba(0, 243, 255, 0.5) !important;
+    color: rgba(0, 243, 255, 0.8) !important;
+  }
+  .tree-drag-handle:active {
+    cursor: grabbing;
+    transform: scale(0.95);
+  }
+  .drop-allowed .tree-drag-handle {
+    opacity: 0.6;
+  }
+  .inline-rename-input {
+    background: rgba(0,0,0,0.5);
+    border: 1px solid rgba(0, 243, 255, 0.5);
+    border-radius: 6px;
+    color: #fff;
+    font-size: inherit;
+    font-weight: inherit;
+    font-family: inherit;
+    padding: 1px 6px;
+    outline: none;
+    width: 100%;
+    min-width: 120px;
+  }
+  .inline-rename-input:focus {
+    border-color: rgba(0, 243, 255, 0.9);
+    box-shadow: 0 0 6px rgba(0, 243, 255, 0.4);
+  }
+  [data-renameable] { cursor: pointer; border-radius: 4px; }
+  [data-renameable]:hover { background: rgba(0, 243, 255, 0.12); }
+  [data-renaming] { pointer-events: none; }
+  @media (max-width: 767.98px) {
+    .tree-card-header,
+    .tree-category-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .tree-children {
+      padding-left: 0.45rem;
+      margin-left: 0.2rem;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const csrfToken = '{{ csrf_token() }}';
+  const statusNode = document.getElementById('tree-status');
+  const dropIndicator = document.getElementById('drop-indicator');
+  let dragPayload = null;
+  let dragSourceEl = null;
+  let ghostPlaceholder = null;
+
+  function setStatus(text, isError = false) {
+    statusNode.textContent = text;
+    statusNode.classList.toggle('text-danger', isError);
+    statusNode.classList.toggle('text-secondary', !isError);
+  }
+
+  function clearDropClasses() {
+    document.querySelectorAll('.drop-inside, .drop-before, .drop-after').forEach((node) => {
+      node.classList.remove('drop-inside', 'drop-before', 'drop-after');
+    });
+  }
+
+  function findNode(el) {
+    return el.closest('[data-node-type]');
+  }
+
+  function canDrop(dragType, targetType, position) {
+    if (dragType === 'competency') {
+      return targetType === 'competency' && position !== 'inside';
+    }
+    if (dragType === 'category') {
+      if (targetType === 'competency') {
+        return position === 'inside';
+      }
+      return targetType === 'category' && position !== 'inside';
+    }
+    if (dragType === 'work') {
+      if (targetType === 'category') {
+        return position === 'inside';
+      }
+      return targetType === 'work' && position !== 'inside';
+    }
+    return false;
+  }
+
+  function resolveDropPosition(targetNode, dragType, clientY) {
+    const targetType = targetNode.dataset.nodeType;
+    if (dragType === 'category' && targetType === 'competency') {
+      return 'inside';
+    }
+    if (dragType === 'work' && targetType === 'category') {
+      return 'inside';
+    }
+    const rect = targetNode.getBoundingClientRect();
+    return (clientY - rect.top) < (rect.height / 2) ? 'before' : 'after';
+  }
+
+  function ensurePlaceholder(kind) {
+    if (ghostPlaceholder && ghostPlaceholder.dataset.kind === kind) {
+      return ghostPlaceholder;
+    }
+    if (ghostPlaceholder && ghostPlaceholder.parentNode) {
+      ghostPlaceholder.parentNode.removeChild(ghostPlaceholder);
+    }
+    ghostPlaceholder = document.createElement('div');
+    ghostPlaceholder.className = 'ghost-placeholder ghost-' + kind;
+    ghostPlaceholder.dataset.kind = kind;
+    return ghostPlaceholder;
+  }
+
+  function clearPlaceholder() {
+    if (ghostPlaceholder && ghostPlaceholder.parentNode) {
+      ghostPlaceholder.parentNode.removeChild(ghostPlaceholder);
+    }
+    ghostPlaceholder = null;
+  }
+
+  function showIndicator(text, x, y) {
+    dropIndicator.textContent = text;
+    dropIndicator.style.left = x + 'px';
+    dropIndicator.style.top = y + 'px';
+    dropIndicator.classList.add('show');
+  }
+
+  function hideIndicator() {
+    dropIndicator.classList.remove('show');
+  }
+
+  async function persistMove(payload) {
+    const response = await fetch('{{ url_for("admin.work_tree_reorder") }}', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfToken
+      },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(data.message || 'Не удалось сохранить структуру.');
+    }
+  }
+
+  async function persistInlineField(input) {
+    const originalValue = input.dataset.originalValue ?? input.defaultValue ?? input.value;
+    const nextValue = input.value.trim();
+    if (nextValue === String(originalValue)) {
+      return;
+    }
+
+    input.classList.add('is-saving');
+    input.classList.remove('is-error');
+    try {
+      const updateUrl = '{{ url_for("admin.work_tree_work_inline_update", work_id=0) }}'.replace(/0$/, input.dataset.workId);
+      const response = await fetch(updateUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify({
+          field: input.dataset.inlineField,
+          value: nextValue
+        })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || 'Не удалось сохранить значение.');
+      }
+      input.value = data.value;
+      input.dataset.originalValue = String(data.value);
+      setStatus(`СОХРАНЕНО: ${data.display}`);
+    } catch (error) {
+      input.value = originalValue;
+      input.classList.add('is-error');
+      setStatus(error.message, true);
+      setTimeout(() => input.classList.remove('is-error'), 1200);
+    } finally {
+      input.classList.remove('is-saving');
+    }
+  }
+
+  document.querySelectorAll('[data-node-type]').forEach((node) => {
+    node.addEventListener('dragstart', (event) => {
+      const handle = event.target.closest('.tree-drag-handle');
+      if (!handle) {
+        event.preventDefault();
+        return;
+      }
+      dragPayload = {
+        drag_type: node.dataset.nodeType,
+        drag_id: Number(node.dataset.nodeId),
+      };
+      dragSourceEl = node;
+      node.classList.add('dragging');
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', JSON.stringify(dragPayload));
+      setStatus('ПЕРЕМЕЩЕНИЕ_УЗЛА...');
+      highlightAllowedTargets(dragPayload.drag_type);
+      event.stopPropagation();
+    });
+
+    node.addEventListener('dragend', () => {
+      node.classList.remove('dragging');
+      clearDropClasses();
+      clearAllowedHighlights();
+      setStatus('ГОТОВО.NULL');
+      dragPayload = null;
+      dragSourceEl = null;
+      clearPlaceholder();
+      hideIndicator();
+    });
+
+    node.addEventListener('dragover', (event) => {
+      if (!dragPayload) {
+        return;
+      }
+      const targetNode = findNode(event.currentTarget);
+      if (!targetNode || targetNode === document.querySelector('.dragging')) {
+        return;
+      }
+      const position = resolveDropPosition(targetNode, dragPayload.drag_type, event.clientY);
+      if (!canDrop(dragPayload.drag_type, targetNode.dataset.nodeType, position)) {
+        return;
+      }
+      event.preventDefault();
+      clearDropClasses();
+      if (position === 'inside') {
+        targetNode.classList.add('drop-inside');
+        const kind = targetNode.dataset.nodeType;
+        const ph = ensurePlaceholder(kind);
+        if (targetNode.querySelector('.ghost-placeholder') !== ph) {
+          targetNode.appendChild(ph);
+        }
+        showIndicator('ВНУТРЬ', event.clientX, event.clientY);
+      } else {
+        targetNode.classList.add(position === 'before' ? 'drop-before' : 'drop-after');
+        const kind = targetNode.dataset.nodeType;
+        const ph = ensurePlaceholder(kind);
+        if (position === 'before') {
+          if (targetNode.previousSibling !== ph) {
+            targetNode.parentNode.insertBefore(ph, targetNode);
+          }
+        } else {
+          if (targetNode.nextSibling !== ph) {
+            targetNode.parentNode.insertBefore(ph, targetNode.nextSibling);
+          }
+        }
+        showIndicator(position === 'before' ? 'ДО' : 'ПОСЛЕ', event.clientX, event.clientY);
+      }
+    });
+
+    node.addEventListener('drop', async (event) => {
+      if (!dragPayload) {
+        return;
+      }
+      const targetNode = findNode(event.currentTarget);
+      if (!targetNode || dragPayload.drag_id === Number(targetNode.dataset.nodeId)) {
+        return;
+      }
+      const position = resolveDropPosition(targetNode, dragPayload.drag_type, event.clientY);
+      if (!canDrop(dragPayload.drag_type, targetNode.dataset.nodeType, position)) {
+        return;
+      }
+      event.preventDefault();
+      try {
+        await persistMove({
+          ...dragPayload,
+          target_type: targetNode.dataset.nodeType,
+          target_id: Number(targetNode.dataset.nodeId),
+          position,
+        });
+        applyDomMove(dragPayload, { targetType: targetNode.dataset.nodeType, targetId: Number(targetNode.dataset.nodeId), position, targetNode });
+        setStatus('ПЕРЕМЕЩЕНО.OK');
+        hideIndicator();
+        clearPlaceholder();
+      } catch (error) {
+        clearDropClasses();
+        setStatus(error.message, true);
+      }
+    });
+  });
+
+  document.querySelectorAll('.category-dropzone, .work-dropzone').forEach((zone) => {
+    zone.addEventListener('dragover', (event) => {
+      if (!dragPayload || !canDrop(dragPayload.drag_type, zone.dataset.targetType, 'inside')) {
+        return;
+      }
+      event.preventDefault();
+      clearDropClasses();
+      zone.classList.add('drop-inside');
+      const kind = zone.dataset.targetType;
+      const ph = ensurePlaceholder(kind);
+      if (zone.querySelector('.ghost-placeholder') !== ph) {
+        zone.appendChild(ph);
+      }
+      showIndicator('ВНУТРЬ', event.clientX, event.clientY);
+    });
+
+    zone.addEventListener('dragleave', (event) => {
+      if (event.target === zone) {
+        zone.classList.remove('drop-inside');
+        clearPlaceholder();
+        hideIndicator();
+      }
+    });
+
+    zone.addEventListener('drop', async (event) => {
+      if (!dragPayload || !canDrop(dragPayload.drag_type, zone.dataset.targetType, 'inside')) {
+        return;
+      }
+      event.preventDefault();
+      try {
+        await persistMove({
+          ...dragPayload,
+          target_type: zone.dataset.targetType,
+          target_id: Number(zone.dataset.targetId),
+          position: 'inside',
+        });
+        applyDomMove(dragPayload, { targetType: zone.dataset.targetType, targetId: Number(zone.dataset.targetId), position: 'inside', targetNode: zone });
+        setStatus('ПЕРЕМЕЩЕНО.OK');
+        hideIndicator();
+        clearPlaceholder();
+      } catch (error) {
+        clearDropClasses();
+        setStatus(error.message, true);
+      }
+    });
+  });
+
+  document.querySelectorAll('.inline-badge-input').forEach((input) => {
+    input.dataset.originalValue = String(input.value);
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        input.blur();
+      }
+    });
+    input.addEventListener('blur', () => {
+      persistInlineField(input);
+    });
+  });
+
+  document.querySelectorAll('.tree-drag-handle').forEach((handle) => {
+    handle.addEventListener('mousedown', (event) => {
+      event.stopPropagation();
+      const node = handle.closest('[data-node-type]');
+      if (node) {
+        node.draggable = true;
+        setTimeout(() => {
+          node.draggable = true;
+        }, 10);
+      }
+    });
+    handle.addEventListener('dblclick', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+  });
+
+  // Debug logging
+  console.log('Work tree initialized');
+  console.log('Found drag handles:', document.querySelectorAll('.tree-drag-handle').length);
+  console.log('Found renameable elements:', document.querySelectorAll('[data-renameable="1"]').length);
+
+  document.querySelectorAll('[data-no-drag="true"]').forEach((element) => {
+    element.setAttribute('draggable', 'false');
+    element.addEventListener('dragstart', (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+    });
+  });
+
+  document.addEventListener('dragover', (event) => {
+    if (!dragPayload) return;
+    const targetEl = document.elementFromPoint(event.clientX, event.clientY);
+    if (!targetEl) return;
+    const zone = targetEl.closest('.category-dropzone, .work-dropzone');
+    const node = targetEl.closest('[data-node-type]');
+    if (!zone && !node) return;
+    event.preventDefault();
+    clearDropClasses();
+    if (zone) {
+      const allowed = canDrop(dragPayload.drag_type, zone.dataset.targetType, 'inside');
+      if (!allowed) return;
+      zone.classList.add('drop-inside');
+      const kind = zone.dataset.targetType;
+      const ph = ensurePlaceholder(kind);
+      if (zone.querySelector('.ghost-placeholder') !== ph) {
+        zone.appendChild(ph);
+      }
+      showIndicator('ВНУТРЬ', event.clientX, event.clientY);
+    } else if (node) {
+      const position = resolveDropPosition(node, dragPayload.drag_type, event.clientY);
+      if (!canDrop(dragPayload.drag_type, node.dataset.nodeType, position)) return;
+      if (position === 'inside') {
+        node.classList.add('drop-inside');
+        const kind = node.dataset.nodeType;
+        const ph = ensurePlaceholder(kind);
+        if (node.querySelector('.ghost-placeholder') !== ph) {
+          node.appendChild(ph);
+        }
+        showIndicator('ВНУТРЬ', event.clientX, event.clientY);
+      } else {
+        node.classList.add(position === 'before' ? 'drop-before' : 'drop-after');
+        const kind = node.dataset.nodeType;
+        const ph = ensurePlaceholder(kind);
+        if (position === 'before') {
+          if (node.previousSibling !== ph) {
+            node.parentNode.insertBefore(ph, node);
+          }
+        } else {
+          if (node.nextSibling !== ph) {
+            node.parentNode.insertBefore(ph, node.nextSibling);
+          }
+        }
+        showIndicator(position === 'before' ? 'ДО' : 'ПОСЛЕ', event.clientX, event.clientY);
+      }
+    }
+  }, true);
+
+  document.addEventListener('drop', async (event) => {
+    if (!dragPayload) return;
+    const targetEl = document.elementFromPoint(event.clientX, event.clientY);
+    if (!targetEl) return;
+    const zone = targetEl.closest('.category-dropzone, .work-dropzone');
+    const node = targetEl.closest('[data-node-type]');
+    if (!zone && !node) return;
+    event.preventDefault();
+    try {
+      if (zone) {
+        if (!canDrop(dragPayload.drag_type, zone.dataset.targetType, 'inside')) return;
+        await persistMove({
+          ...dragPayload,
+          target_type: zone.dataset.targetType,
+          target_id: Number(zone.dataset.targetId),
+          position: 'inside',
+        });
+        applyDomMove(dragPayload, { targetType: zone.dataset.targetType, targetId: Number(zone.dataset.targetId), position: 'inside', targetNode: zone });
+      } else if (node) {
+        const position = resolveDropPosition(node, dragPayload.drag_type, event.clientY);
+        if (!canDrop(dragPayload.drag_type, node.dataset.nodeType, position)) return;
+        await persistMove({
+          ...dragPayload,
+          target_type: node.dataset.nodeType,
+          target_id: Number(node.dataset.nodeId),
+          position,
+        });
+        applyDomMove(dragPayload, { targetType: node.dataset.nodeType, targetId: Number(node.dataset.nodeId), position, targetNode: node });
+      }
+      setStatus('ПЕРЕМЕЩЕНО.OK');
+      hideIndicator();
+      clearPlaceholder();
+    } catch (error) {
+      clearDropClasses();
+      setStatus(error.message, true);
+    }
+  }, true);
+
+  function applyDomMove(payload, target) {
+    if (!dragSourceEl) return;
+    const sourceEl = dragSourceEl;
+    sourceEl.classList.remove('dragging');
+
+    // Add animation class
+    sourceEl.classList.add('node-roller');
+    setTimeout(() => sourceEl.classList.remove('node-roller'), 450);
+
+    if (payload.drag_type === 'competency') {
+      if (target.targetType === 'competency') {
+        const ref = target.position === 'before'
+          ? target.targetNode.previousElementSibling
+          : target.targetNode.nextElementSibling;
+        if (ref && ref.parentNode) ref.parentNode.insertBefore(sourceEl, ref);
+      }
+    } else if (payload.drag_type === 'category') {
+      if (target.targetType === 'competency' && target.position === 'inside') {
+        const list = target.targetNode.querySelector('.category-dropzone');
+        if (list) {
+          // Remove from old parent first
+          if (sourceEl.parentNode) {
+            sourceEl.parentNode.removeChild(sourceEl);
+          }
+          list.appendChild(sourceEl);
+          updateCategoryCounts(target.targetNode);
+        }
+      } else if (target.targetType === 'category') {
+        const ref = target.position === 'before'
+          ? target.targetNode.previousElementSibling
+          : target.targetNode.nextElementSibling;
+        if (ref && ref.parentNode) ref.parentNode.insertBefore(sourceEl, ref);
+        updateCategoryCounts(sourceEl.closest('.tree-card'));
+      }
+    } else if (payload.drag_type === 'work') {
+      if (target.targetType === 'category' && target.position === 'inside') {
+        const list = target.targetNode.querySelector('.work-dropzone');
+        if (list) {
+          // Remove from old parent first
+          if (sourceEl.parentNode) {
+            sourceEl.parentNode.removeChild(sourceEl);
+          }
+          list.appendChild(sourceEl);
+          updateWorkCounts(target.targetNode);
+        }
+      } else if (target.targetType === 'work') {
+        const ref = target.position === 'before'
+          ? target.targetNode.previousElementSibling
+          : target.targetNode.nextElementSibling;
+        if (ref && ref.parentNode) ref.parentNode.insertBefore(sourceEl, ref);
+        updateWorkCounts(sourceEl.closest('.tree-category'));
+      }
+    }
+
+    clearDropClasses();
+    clearPlaceholder();
+  }
+
+  function highlightAllowedTargets(dragType) {
+    clearAllowedHighlights();
+    if (dragType === 'competency') {
+      document.querySelectorAll('.tree-card').forEach((el) => {
+        if (Number(el.dataset.nodeId) !== Number(dragPayload?.drag_id)) el.classList.add('drop-allowed');
+      });
+    } else if (dragType === 'category') {
+      document.querySelectorAll('.tree-card').forEach((el) => {
+        el.classList.add('drop-allowed', 'drop-allowed-category');
+      });
+      document.querySelectorAll('.tree-category').forEach((el) => {
+        if (Number(el.dataset.nodeId) !== Number(dragPayload?.drag_id)) el.classList.add('drop-allowed');
+      });
+    } else if (dragType === 'work') {
+      document.querySelectorAll('.tree-category').forEach((el) => {
+        el.classList.add('drop-allowed', 'drop-allowed-category');
+      });
+      document.querySelectorAll('.tree-work').forEach((el) => {
+        if (Number(el.dataset.nodeId) !== Number(dragPayload?.drag_id)) el.classList.add('drop-allowed', 'drop-allowed-work');
+      });
+    }
+  }
+
+  function clearAllowedHighlights() {
+    document.querySelectorAll('.drop-allowed').forEach((el) => {
+      el.classList.remove('drop-allowed', 'drop-allowed-category', 'drop-allowed-work');
+    });
+  }
+
+  function updateCategoryCounts(sectionEl) {
+    if (!sectionEl) return;
+    const badge = sectionEl.querySelector(':scope > .tree-card-header .tree-actions .badge, .tree-actions .badge');
+    if (badge) badge.textContent = String(sectionEl.querySelectorAll('.tree-category').length);
+  }
+
+  function updateWorkCounts(categoryEl) {
+    if (!categoryEl) return;
+    const badge = categoryEl.querySelector('.tree-category-header .tree-actions .badge, .tree-actions .badge');
+    if (badge) badge.textContent = String(categoryEl.querySelectorAll('.tree-work').length);
+  }
+
+  function renameInline(nodeEl, field, nodeType, nodeId) {
+    if (nodeEl.hasAttribute('data-renaming')) return;
+    const rollback = nodeEl.textContent.trim();
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = rollback;
+    input.className = 'inline-rename-input';
+    nodeEl.setAttribute('data-renaming', '1');
+    nodeEl.textContent = '';
+    nodeEl.appendChild(input);
+    input.focus();
+    input.select();
+    const finish = (commit) => {
+      if (!commit || !input.value.trim()) { nodeEl.textContent = rollback; nodeEl.removeAttribute('data-renaming'); return; }
+      const newVal = input.value.trim();
+      nodeEl.textContent = newVal;
+      nodeEl.removeAttribute('data-renaming');
+      fetch('{{ url_for("admin.work_tree_rename") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+        body: JSON.stringify({ node_type: nodeType, node_id: nodeId, field, value: newVal })
+      }).then((r) => r.json()).then((d) => {
+        if (d.ok) setStatus('ПЕРЕИМЕНОВАНО.OK');
+        else { nodeEl.textContent = rollback; setStatus(d.message || 'Ошибка', true); }
+      }).catch(() => { nodeEl.textContent = rollback; setStatus('Ошибка сети', true); });
+    };
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+      else if (e.key === 'Escape') { finish(false); }
+    });
+    input.addEventListener('blur', () => finish(true));
+  }
+
+  document.querySelectorAll('.tree-title, .tree-subtitle').forEach((el) => {
+    el.setAttribute('data-renameable', '1');
+    el.title = 'Двойной клик — переименовать';
+    el.addEventListener('dblclick', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const card = el.closest('[data-node-type]');
+      renameInline(el, 'title', card.dataset.nodeType, Number(card.dataset.nodeId));
+    });
+  });
+
+  document.querySelectorAll('.tree-work .tree-node-main > div:last-child').forEach((el) => {
+    const workEl = el.closest('[data-node-type="work"]');
+    if (!workEl) return;
+    el.setAttribute('data-renameable', '1');
+    el.title = 'Двойной клик — переименовать';
+    el.addEventListener('dblclick', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      renameInline(el, 'title', 'work', Number(workEl.dataset.nodeId));
+    });
+  });
+
+  document.querySelectorAll('.delete-node-btn').forEach((btn) => {
+    btn.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      
+      const nodeType = btn.dataset.nodeType;
+      const nodeId = btn.dataset.nodeId;
+      
+      let confirmMsg = 'Удалить этот элемент?';
+      if (nodeType === 'competency') confirmMsg = 'Удалить участок и все вложенные категории и операции?';
+      else if (nodeType === 'category') confirmMsg = 'Удалить категорию и все вложенные операции?';
+      else if (nodeType === 'work') confirmMsg = 'Удалить операцию?';
+      
+      if (!confirm(confirmMsg)) return;
+
+      const nodeEl = btn.closest('[data-node-type="' + nodeType + '"]');
+      const parentCompetency = nodeType === 'category' ? btn.closest('.tree-card') : null;
+      const parentCategory = nodeType === 'work' ? btn.closest('.tree-category') : null;
+
+      try {
+        setStatus('УДАЛЕНИЕ...');
+        const response = await fetch('{{ url_for("admin.work_tree_delete") }}', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+          },
+          body: JSON.stringify({ node_type: nodeType, node_id: Number(nodeId) })
+        });
+        const data = await response.json();
+        
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || 'Не удалось удалить элемент.');
+        }
+
+        // Remove from DOM
+        if (nodeEl) {
+          nodeEl.remove();
+        }
+
+        // Update counters
+        if (parentCompetency) {
+          updateCategoryCounts(parentCompetency);
+        }
+        if (parentCategory) {
+          updateWorkCounts(parentCategory);
+        }
+
+        setStatus('УДАЛЕНО.OK');
+      } catch (error) {
+        setStatus(error.message, true);
+        alert(error.message);
+      }
+    });
+  });
+});
+</script>
+{% endblock %}
