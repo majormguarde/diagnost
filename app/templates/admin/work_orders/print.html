@@ -5,158 +5,231 @@
     <title>Заказ-наряд №{{ order.id }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body {
-            background-color: white;
-            color: black;
-            font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            font-size: 12px;
-        }
-        .container {
-            max-width: 800px;
+        /* Экран: панель действий */
+        .no-print { background: #f1f3f5; padding: 8px 10px; margin-bottom: 8px; border-radius: 6px; }
+        .no-print .btn { font-size: 12px; padding: 4px 10px; }
+
+        /* Общая компактная вёрстка (экран + печать) */
+        #wo-print-root {
+            max-width: 190mm;
             margin: 0 auto;
-            padding: 20px;
+            color: #000;
+            font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+            font-size: 8.5pt;
+            line-height: 1.15;
         }
-        .header-logo {
-            font-size: 24px;
+        #wo-print-root .wo-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            border-bottom: 1px solid #000;
+            padding-bottom: 2px;
+            margin-bottom: 4px;
             font-weight: bold;
-            letter-spacing: 2px;
-            border-bottom: 2px solid black;
-            padding-bottom: 10px;
-            margin-bottom: 20px;
+            font-size: 9.5pt;
         }
-        .section-title {
-            background-color: #f8f9fa;
+        #wo-print-root .wo-head small { font-weight: normal; font-size: 8pt; }
+        #wo-print-root .wo-grid2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px 10px;
+            margin-bottom: 4px;
+        }
+        #wo-print-root .wo-block-title {
             font-weight: bold;
-            padding: 5px 10px;
-            margin-top: 20px;
-            margin-bottom: 10px;
-            border-left: 4px solid black;
+            font-size: 7.5pt;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+            margin: 4px 0 1px;
+            padding: 1px 0;
+            border-bottom: 1px solid #999;
         }
-        .info-table th {
-            width: 30%;
-            color: #6c757d;
+        #wo-print-root table.wo-meta { width: 100%; font-size: 7.5pt; border-collapse: collapse; }
+        #wo-print-root table.wo-meta th {
+            color: #333;
             font-weight: normal;
+            text-align: left;
+            width: 26%;
+            padding: 0 4px 0 0;
+            vertical-align: top;
         }
-        .table-items thead th {
-            background-color: #f8f9fa;
-            border-bottom: 2px solid #dee2e6;
+        #wo-print-root table.wo-meta td { padding: 0 0 1px 0; vertical-align: top; }
+        #wo-print-root table.wo-tbl {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 7.5pt;
+            margin-bottom: 3px;
         }
-        .total-row {
-            font-size: 16px;
+        #wo-print-root table.wo-tbl th,
+        #wo-print-root table.wo-tbl td {
+            border: 1px solid #333;
+            padding: 1px 3px;
+            vertical-align: top;
+        }
+        #wo-print-root table.wo-tbl thead th {
+            background: #e9e9e9;
             font-weight: bold;
+            text-align: center;
         }
-        .footer-signatures {
-            margin-top: 50px;
+        #wo-print-root table.wo-tbl .nw { white-space: nowrap; }
+        #wo-print-root table.wo-tbl .r { text-align: right; }
+        #wo-print-root table.wo-tbl .c { text-align: center; }
+        #wo-print-root .wo-foot {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 6px;
+            margin-top: 4px;
+            align-items: start;
         }
-        .signature-line {
-            border-bottom: 1px solid black;
-            width: 200px;
+        #wo-print-root .wo-inspect {
+            border: 1px solid #333;
+            padding: 2px 4px;
+            font-size: 7.5pt;
+        }
+        #wo-print-root .wo-total {
+            border: 1px solid #000;
+            padding: 2px 6px;
+            text-align: right;
+            font-weight: bold;
+            font-size: 9pt;
+            white-space: nowrap;
+        }
+        #wo-print-root .wo-sign {
+            margin-top: 6px;
+            font-size: 7.5pt;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px;
+        }
+        #wo-print-root .wo-sign .line {
+            border-bottom: 1px solid #000;
             display: inline-block;
+            min-width: 120px;
+            margin-left: 4px;
         }
+
         @media print {
-            .no-print {
-                display: none;
-            }
-            body {
-                padding: 0;
-            }
-            .container {
-                max-width: 100%;
-                width: 100%;
-                padding: 0;
-            }
+            @page { size: A4 portrait; margin: 6mm; }
+            .no-print { display: none !important; }
+            body { margin: 0; padding: 0; background: #fff !important; }
+            #wo-print-root { max-width: 100%; font-size: 8pt; }
+            #wo-print-root table.wo-tbl { page-break-inside: auto; }
+            #wo-print-root tr { page-break-inside: avoid; page-break-after: auto; }
         }
     </style>
 </head>
-<body onload="window.print()">
-    <div class="container">
-        <div class="no-print mb-4 d-flex justify-content-between">
-            <a href="{{ url_for('admin.work_order_detail', order_id=order.id) }}" class="btn btn-secondary">← Вернуться к заказу</a>
-            <button onclick="window.print()" class="btn btn-primary">Распечатать / Сохранить в PDF</button>
+<body>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="no-print small mb-2">
+        {% for category, message in messages %}
+        <div class="alert alert-{{ 'danger' if category == 'error' else category }} py-1 px-2 mb-1">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+    <div class="no-print d-flex flex-wrap align-items-center gap-2 justify-content-between">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <a href="{{ print_back_url }}" class="btn btn-secondary">{{ print_back_label }}</a>
+            <button type="button" class="btn btn-primary" onclick="window.print()">Печать / PDF</button>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-1">
+            {% if send_email_available and send_email_url %}
+            <form method="post" action="{{ send_email_url }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-outline-dark" title="Отправить на email">На почту</button>
+            </form>
+            {% else %}
+            <button type="button" class="btn btn-outline-secondary" disabled title="{{ send_email_hint or 'Нет email' }}">На почту</button>
+            {% endif %}
+            <a class="btn btn-outline-success" href="{{ whatsapp_share_href }}" target="_blank" rel="noopener noreferrer" title="Открыть WhatsApp с текстом заказ-наряда">WhatsApp</a>
+            <form method="post" action="{{ telegram_code_post_url }}" class="d-inline" title="Создать код и отправить в Telegram адрес бота и команду /zakaz (нужен токен бота и привязка Telegram у клиента)">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-outline-primary">Telegram</button>
+            </form>
+        </div>
+    </div>
+    {% if telegram_delivery %}
+    <div class="no-print alert alert-info py-2 px-3 small mb-2">
+        <div class="fw-bold mb-1">Код для получения наряда через бота</div>
+        <div>Бот: <a href="https://t.me/{{ telegram_delivery.bot }}" target="_blank" rel="noopener noreferrer">@{{ telegram_delivery.bot }}</a></div>
+        <div>Код: <code class="user-select-all">{{ telegram_delivery.code }}</code></div>
+        <div>Команда боту: <code class="user-select-all">/zakaz {{ telegram_delivery.code }}</code></div>
+        <div class="text-secondary mt-1">Текст для клиента (если не ушёл автоматически):</div>
+        <pre class="mb-0 mt-1 small bg-white text-dark p-2 border rounded" style="white-space:pre-wrap;">{{ telegram_delivery.message }}</pre>
+    </div>
+    {% endif %}
+
+    <div id="wo-print-root" class="container-fluid px-0">
+        <div class="wo-head">
+            <span>{{ (settings.name if settings else None) or 'DIAGNOST.EXE' }}</span>
+            <small>ЗАКАЗ-НАРЯД №{{ order.id }} · {{ order.created_at.strftime('%d.%m.%Y') }}</small>
         </div>
 
-        <div class="header-logo d-flex justify-content-between align-items-center">
-            <span>{{ settings.name or 'DIAGNOST.EXE' }}</span>
-            <span class="fs-6 fw-normal text-secondary">ЗАКАЗ-НАРЯД №{{ order.id }} ОТ {{ order.created_at.strftime('%d.%m.%Y') }}</span>
-        </div>
-
-        <div class="row">
-            <div class="col-6">
-                <div class="section-title">ИСПОЛНИТЕЛЬ</div>
-                <table class="table table-sm table-borderless info-table">
-                    <tr><th>Организация:</th><td>{{ settings.name }}</td></tr>
-                    <tr><th>Адрес:</th><td>{{ settings.address or '---' }}</td></tr>
-                    <tr><th>Телефон:</th><td>{{ settings.phone or '---' }}</td></tr>
-                    <tr><th>Мастер:</th><td>{{ order.master.name }}</td></tr>
+        <div class="wo-grid2">
+            <div>
+                <div class="wo-block-title">Исполнитель</div>
+                <table class="wo-meta">
+                    <tr><th>Орг.</th><td>{{ settings.name if settings else '—' }}</td></tr>
+                    <tr><th>Адрес</th><td>{{ (settings.address if settings else None) or '—' }}</td></tr>
+                    <tr><th>Тел.</th><td>{{ (settings.phone if settings else None) or '—' }}</td></tr>
+                    <tr><th>Мастер</th><td>{{ order.master.name if order.master else '—' }}</td></tr>
                 </table>
             </div>
-            <div class="col-6">
-                <div class="section-title">ЗАКАЗЧИК</div>
-                <table class="table table-sm table-borderless info-table">
-                    <tr><th>ФИО:</th><td>{{ order.client.name }}</td></tr>
-                    <tr><th>Телефон:</th><td>{{ order.client.phone }}</td></tr>
-                    <tr><th>Автомобиль:</th><td>{{ order.appointment.car_make if order.appointment else '---' }} {{ order.appointment.car_model if order.appointment else '' }}</td></tr>
-                    <tr><th>Гос.номер:</th><td>{{ order.appointment.car_number if order.appointment else '---' }}</td></tr>
-                    <tr><th>WIN номер:</th><td>{{ order.appointment.win_number if order.appointment and order.appointment.win_number else '---' }}</td></tr>
+            <div>
+                <div class="wo-block-title">Заказчик</div>
+                <table class="wo-meta">
+                    <tr><th>ФИО</th><td>{{ order.client.name if order.client else '—' }}</td></tr>
+                    <tr><th>Тел.</th><td>{{ order.client.phone if order.client else '—' }}</td></tr>
+                    <tr><th>Авто</th><td>{{ (order.appointment.car_make if order.appointment else '') or '' }} {{ (order.appointment.car_model if order.appointment else '') or '' }}</td></tr>
+                    <tr><th>Гос№</th><td>{{ order.appointment.car_number if order.appointment else '—' }}</td></tr>
+                    <tr><th>VIN</th><td>{{ order.appointment.win_number if order.appointment and order.appointment.win_number else '—' }}</td></tr>
                 </table>
             </div>
         </div>
 
-        <div class="section-title">ПЕРЕЧЕНЬ РАБОТ И УСЛУГ</div>
-        <table class="table table-sm table-items">
+        <div class="wo-block-title">Работы</div>
+        <table class="wo-tbl">
             <thead>
                 <tr>
-                    <th class="ps-3">№</th>
-                    <th>Наименование работ</th>
-                    <th class="text-center">Норма (мин)</th>
-                    <th class="text-center">Факт (мин)</th>
-                    <th class="text-end pe-3">Стоимость (руб.)</th>
-                    <th>Комментарий</th>
-                    <th class="text-center">Статус</th>
+                    <th class="nw">№</th>
+                    <th>Наименование</th>
+                    <th class="nw c">Норм</th>
+                    <th class="nw c">Факт</th>
+                    <th class="nw r">Руб</th>
+                    <th>Комм.</th>
+                    <th class="nw c">Ст</th>
                 </tr>
             </thead>
             <tbody>
                 {% for item in order.items %}
                 <tr>
-                    <td class="ps-3">{{ loop.index }}</td>
+                    <td class="c">{{ loop.index }}</td>
                     <td>{{ item.title }}</td>
-                    <td class="text-center">{{ item.duration }}</td>
-                    <td class="text-center">{{ item.actual_duration or 0 }}</td>
-                    <td class="text-end pe-3">{{ "{:,.0f}".format(item.price).replace(',', ' ') }}</td>
-                    <td class="small">{{ item.comment or '' }}</td>
-                    <td class="text-center">
-                        {% if item.is_done %}
-                            <span class="badge bg-success">Выполнено</span>
-                        {% else %}
-                            <span class="badge bg-secondary">В работе</span>
-                        {% endif %}
-                    </td>
+                    <td class="c">{{ item.duration }}</td>
+                    <td class="c">{{ item.actual_duration or 0 }}</td>
+                    <td class="r">{{ "{:,.0f}".format(item.price).replace(',', ' ') }}</td>
+                    <td style="font-size:6.5pt;">{{ (item.comment or '')[:40] }}{% if item.comment and item.comment|length > 40 %}…{% endif %}</td>
+                    <td class="c">{% if item.is_done %}+{% else %}−{% endif %}</td>
                 </tr>
                 {% endfor %}
                 {% if not order.items %}
-                <tr><td colspan="7" class="text-center text-muted py-3">Работы не указаны</td></tr>
+                <tr><td colspan="7" class="c" style="color:#666;">—</td></tr>
                 {% endif %}
             </tbody>
         </table>
 
         {% if order.additional_works %}
-        <div class="section-title">ДОПОЛНИТЕЛЬНЫЕ РАБОТЫ (СТОРОННИЕ ИСПОЛНИТЕЛИ)</div>
-        <table class="table table-sm table-items">
-            <thead>
-                <tr>
-                    <th class="ps-3">№</th>
-                    <th>Наименование</th>
-                    <th class="text-end pe-3">Сумма (руб.)</th>
-                    <th>Комментарий</th>
-                </tr>
-            </thead>
+        <div class="wo-block-title">Доп. работы</div>
+        <table class="wo-tbl">
+            <thead><tr><th class="nw">№</th><th>Наименование</th><th class="r nw">Руб</th><th>Комм.</th></tr></thead>
             <tbody>
                 {% for aw in order.additional_works %}
                 <tr>
-                    <td class="ps-3">{{ loop.index }}</td>
+                    <td class="c">{{ loop.index }}</td>
                     <td>{{ aw.title }}</td>
-                    <td class="text-end pe-3">{{ "{:,.0f}".format(aw.price).replace(',', ' ') }}</td>
-                    <td class="text-muted small">{{ aw.comment or '' }}</td>
+                    <td class="r">{{ "{:,.0f}".format(aw.price).replace(',', ' ') }}</td>
+                    <td style="font-size:6.5pt;">{{ (aw.comment or '')[:32] }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -164,25 +237,17 @@
         {% endif %}
 
         {% if merged_inventory_rows %}
-        <div class="section-title">ДЕТАЛИ</div>
-        <table class="table table-sm table-items">
-            <thead>
-                <tr>
-                    <th class="ps-3">№</th>
-                    <th>Наименование</th>
-                    <th class="text-center">Кол-во</th>
-                    <th class="text-end">Цена (руб.)</th>
-                    <th class="text-end pe-3">Сумма (руб.)</th>
-                </tr>
-            </thead>
+        <div class="wo-block-title">Детали</div>
+        <table class="wo-tbl">
+            <thead><tr><th>№</th><th>Наименование</th><th class="c nw">Кол</th><th class="r nw">Цена</th><th class="r nw">Сумма</th></tr></thead>
             <tbody>
                 {% for _, inv_row in merged_inventory_rows %}
                 <tr>
-                    <td class="ps-3">{{ loop.index }}</td>
+                    <td class="c nw">{{ loop.index }}</td>
                     <td>{{ inv_row.title }}</td>
-                    <td class="text-center">{{ inv_row.quantity }} {{ inv_row.unit }}</td>
-                    <td class="text-end">{{ "{:,.0f}".format(inv_row.price).replace(',', ' ') }}</td>
-                    <td class="text-end pe-3">{{ "{:,.0f}".format(inv_row.price * inv_row.quantity).replace(',', ' ') }}</td>
+                    <td class="c nw">{{ inv_row.quantity }} {{ inv_row.unit }}</td>
+                    <td class="r nw">{{ "{:,.0f}".format(inv_row.price).replace(',', ' ') }}</td>
+                    <td class="r nw">{{ "{:,.0f}".format(inv_row.price * inv_row.quantity).replace(',', ' ') }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -190,63 +255,33 @@
         {% endif %}
 
         {% if selected_materials_list %}
-        <div class="section-title">МАТЕРИАЛЫ</div>
-        <table class="table table-sm table-items">
-            <thead>
-                <tr>
-                    <th class="ps-3">№</th>
-                    <th>Наименование</th>
-                    <th class="text-center">Кол-во</th>
-                    <th class="text-end">Цена (руб.)</th>
-                    <th class="text-end pe-3">Сумма (руб.)</th>
-                </tr>
-            </thead>
+        <div class="wo-block-title">Материалы</div>
+        <table class="wo-tbl">
+            <thead><tr><th>№</th><th>Наименование</th><th class="c nw">Кол</th><th class="r nw">Цена</th><th class="r nw">Сумма</th></tr></thead>
             <tbody>
                 {% for item in selected_materials_list %}
                 <tr>
-                    <td class="ps-3">{{ loop.index }}</td>
+                    <td class="c nw">{{ loop.index }}</td>
                     <td>{{ item.title }}</td>
-                    <td class="text-center">{{ item.quantity }} {{ item.unit }}</td>
-                    <td class="text-end">{{ "{:,.0f}".format(item.price).replace(',', ' ') }}</td>
-                    <td class="text-end pe-3">{{ "{:,.0f}".format(item.price * item.quantity).replace(',', ' ') }}</td>
+                    <td class="c nw">{{ item.quantity }} {{ item.unit }}</td>
+                    <td class="r nw">{{ "{:,.0f}".format(item.price).replace(',', ' ') }}</td>
+                    <td class="r nw">{{ "{:,.0f}".format(item.price * item.quantity).replace(',', ' ') }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
         {% endif %}
 
-        <div class="row mt-4">
-            <div class="col-8">
-                <div class="p-3 border rounded bg-light small">
-                    <strong>Рекомендации и результаты осмотра:</strong><br>
-                    {{ order.inspection_results or 'Рекомендаций нет.' }}
-                </div>
+        <div class="wo-foot">
+            <div class="wo-inspect">
+                <strong>Осмотр:</strong> {{ (order.inspection_results or '—')[:900] }}{% if order.inspection_results and order.inspection_results|length > 900 %}…{% endif %}
             </div>
-            <div class="col-4 text-end">
-                <div class="total-row p-3">
-                    ИТОГО К ОПЛАТЕ:<br>
-                    <span class="fs-3 text-primary">{{ "{:,.0f}".format(order.total_amount or 0).replace(',', ' ') }} РУБ.</span>
-                </div>
-            </div>
+            <div class="wo-total">Итого: {{ "{:,.0f}".format(order.total_amount or 0).replace(',', ' ') }} ₽</div>
         </div>
 
-        <div class="footer-signatures">
-            <div class="row">
-                <div class="col-6">
-                    Исполнитель: <span class="signature-line ms-2"></span>
-                </div>
-                <div class="col-6 text-end">
-                    Заказчик: <span class="signature-line ms-2"></span>
-                </div>
-            </div>
-            <div class="row mt-2">
-                <div class="col-6 small text-muted">
-                    (М.П. при наличии)
-                </div>
-                <div class="col-6 text-end small text-muted">
-                    (С условиями и объемом работ согласен)
-                </div>
-            </div>
+        <div class="wo-sign">
+            <div>Исполн.: <span class="line"></span></div>
+            <div class="text-end">Заказчик: <span class="line"></span></div>
         </div>
     </div>
 </body>

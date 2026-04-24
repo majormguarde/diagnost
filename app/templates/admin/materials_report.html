@@ -25,7 +25,7 @@
     </div>
   </div>
 
-  {% if materials_by_title %}
+  {% if materials_groups %}
   <div class="row g-4">
     <div class="col-12">
       <div class="card bg-dark neon-border-green shadow-lg">
@@ -46,10 +46,10 @@
                 </tr>
               </thead>
               <tbody>
-                {% for title, data in materials_by_title.items() %}
+                {% for data in materials_groups %}
                 <tr class="border-secondary border-opacity-10">
                   <td class="ps-4 py-3">
-                    <span class="text-white">{{ title }}</span>
+                    <span class="text-white">{{ data.title }}</span>
                   </td>
                   <td class="text-center py-3">
                     <span class="text-info">{{ data.quantity }}</span>
@@ -89,11 +89,11 @@
         </div>
         <div class="card-body p-0">
           <div class="accordion" id="materialsAccordion">
-            {% for title, data in materials_by_title.items() %}
+            {% for data in materials_groups %}
             <div class="accordion-item bg-transparent border-secondary border-opacity-10">
               <h2 class="accordion-header">
                 <button class="accordion-button bg-dark text-white mono smaller collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ loop.index }}">
-                  <i class="bi bi-box me-2 text-success"></i>{{ title }} 
+                  <i class="bi bi-box me-2 text-success"></i>{{ data.title }} 
                   <span class="ms-2 text-secondary">({{ data.quantity }} {{ data.unit }}, {{ data.total_cost|int }} ₽)</span>
                 </button>
               </h2>

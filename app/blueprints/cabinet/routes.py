@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from secrets import token_urlsafe
 import os
+import smtplib
 import uuid
-
-from flask import Blueprint, Response, current_app, flash, redirect, render_template, url_for, send_from_directory, abort, jsonify, request
+from flask import Blueprint, Response, current_app, flash, redirect, render_template, session, url_for, send_from_directory, abort, jsonify, request
 from flask_login import current_user, login_required
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
@@ -13,22 +13,36 @@ from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 
 from ...extensions import db
+from ...mail import MailConfigurationError, send_organization_email
 from ...models import (
     Appointment,
     AppointmentIssueMedia,
     AppointmentItem,
     AppointmentSlot,
+    OrganizationSettings,
     TelegramLinkToken,
     Work,
     WorkOrder,
     WorkOrderDocument,
     TelegramLink,
 )
+from ...telegram_bot import (
+    build_zakaz_delivery_message,
+    get_telegram_bot_token,
+    get_telegram_bot_username,
+    issue_work_order_telegram_code,
+    telegram_bot_send_message,
+)
 from ...utils import (
     delete_appointment_issue_media_file,
     issue_media_fingerprint,
+    merged_work_order_inventory_rows,
     normalize_win_number,
     problem_description_hash,
+    recalculate_work_order_total,
+    work_order_has_positive_cashflow,
+    work_order_share_text,
+    work_order_whatsapp_share_href,
 )
 
 bp = Blueprint("cabinet", __name__)
@@ -178,10 +192,139 @@ def index():
     ).scalars().all()
     
     orders = db.session.execute(
-        db.select(WorkOrder).where(WorkOrder.client_user_id == current_user.id).order_by(WorkOrder.id.desc())
+        db.select(WorkOrder)
+        .where(WorkOrder.client_user_id == current_user.id)
+        .order_by(WorkOrder.id.desc())
     ).scalars().all()
+
+    # Поддерживаем актуальную сумму (без ручного сохранения в админке)
+    for o in orders:
+        recalculate_work_order_total(o)
+    db.session.commit()
+
+    # Оплата: приход в книге (CashFlow) или флаг заказ-наряда (на случай расхождений/наследия данных).
+    paid_ids: set[int] = set()
+    for o in orders:
+        if work_order_has_positive_cashflow(o.id) or bool(o.is_paid):
+            paid_ids.add(int(o.id))
     
-    return render_template("cabinet/index.html", appointments=appointments, orders=orders)
+    return render_template(
+        "cabinet/index.html",
+        appointments=appointments,
+        orders=orders,
+        paid_order_ids=paid_ids,
+    )
+
+
+@bp.get("/work-orders/<int:order_id>/print")
+@login_required
+def work_order_print(order_id: int):
+    """Печать заказ-наряда для клиента (только свои заказы)."""
+    order = db.session.get(WorkOrder, order_id)
+    if not order or order.client_user_id != current_user.id:
+        abort(404)
+
+    recalculate_work_order_total(order)
+    db.session.commit()
+
+    merged_inventory_rows = merged_work_order_inventory_rows(order)
+    selected_materials_list = list(order.materials or [])
+    settings = OrganizationSettings.get_settings()
+    if order.appointment_id:
+        print_back_url = url_for("cabinet.appointment_detail", appointment_id=order.appointment_id)
+    else:
+        print_back_url = url_for("cabinet.index")
+    org = (settings.name or "").strip()
+    org_disp = org or "Сервис"
+    print_abs = url_for("cabinet.work_order_print", order_id=order.id, _external=True)
+    client_email = (current_user.client_email or "").strip()
+    telegram_delivery = session.pop("telegram_print_delivery", None)
+    if not telegram_delivery or int(telegram_delivery.get("order_id", 0)) != int(order.id):
+        telegram_delivery = None
+    return render_template(
+        "admin/work_orders/print.html",
+        order=order,
+        settings=settings,
+        merged_inventory_rows=merged_inventory_rows,
+        selected_materials_list=selected_materials_list,
+        print_back_url=print_back_url,
+        print_back_label="← К заявке",
+        whatsapp_share_href=work_order_whatsapp_share_href(order, org_disp, print_abs),
+        telegram_delivery=telegram_delivery,
+        telegram_code_post_url=url_for("cabinet.work_order_print_telegram_code", order_id=order.id),
+        telegram_bot_name=get_telegram_bot_username(),
+        send_email_url=url_for("cabinet.work_order_print_send_email", order_id=order.id),
+        send_email_available=bool(client_email),
+        send_email_hint="Укажите email в профиле (данные при регистрации или в кабинете)",
+    )
+
+
+@bp.post("/work-orders/<int:order_id>/print/telegram-code")
+@login_required
+def work_order_print_telegram_code(order_id: int):
+    order = db.session.get(WorkOrder, order_id)
+    if not order or order.client_user_id != current_user.id:
+        abort(404)
+    code = issue_work_order_telegram_code(order.id)
+    bot = get_telegram_bot_username()
+    msg = build_zakaz_delivery_message(order=order, code=code, bot_username=bot)
+    link = db.session.execute(
+        db.select(TelegramLink).where(
+            TelegramLink.user_id == current_user.id,
+            TelegramLink.is_active.is_(True),
+        )
+    ).scalar_one_or_none()
+    if link and get_telegram_bot_token():
+        try:
+            telegram_bot_send_message(link.telegram_chat_id, msg)
+            flash("Сообщение с адресом бота и кодом отправлено вам в Telegram.", "success")
+        except Exception as e:
+            flash(f"Не удалось отправить в Telegram: {e}", "warning")
+    elif not link:
+        flash("Сначала привяжите Telegram в кабинете — затем снова нажмите кнопку.", "warning")
+    else:
+        flash("Токен бота не задан в настройках сервиса («Связь» в админке) — сообщение не отправлено.", "warning")
+
+    session["telegram_print_delivery"] = {
+        "order_id": order.id,
+        "code": code,
+        "bot": bot,
+        "message": msg,
+    }
+    return redirect(url_for("cabinet.work_order_print", order_id=order.id))
+
+
+@bp.post("/work-orders/<int:order_id>/print/send-email")
+@login_required
+def work_order_print_send_email(order_id: int):
+    order = db.session.get(WorkOrder, order_id)
+    if not order or order.client_user_id != current_user.id:
+        abort(404)
+    to = (current_user.client_email or "").strip()
+    if not to:
+        flash("Укажите email в профиле, чтобы получать заказ-наряды на почту.", "warning")
+        return redirect(url_for("cabinet.work_order_print", order_id=order_id))
+    settings = OrganizationSettings.get_settings()
+    recalculate_work_order_total(order)
+    db.session.commit()
+    merged_inventory_rows = merged_work_order_inventory_rows(order)
+    subject = f"Заказ-наряд №{order.id}"
+    body_plain = work_order_share_text(order, (settings.name or "").strip() or "Сервис", max_length=8000)
+    body_html = render_template(
+        "email/work_order_compact.html",
+        order=order,
+        settings=settings,
+        merged_inventory_rows=merged_inventory_rows,
+        selected_materials_list=list(order.materials or []),
+    )
+    try:
+        send_organization_email([to], subject, body_plain, body_html=body_html, settings=settings)
+        flash(f"Письмо отправлено на {to}", "success")
+    except MailConfigurationError as e:
+        flash(str(e), "danger")
+    except (OSError, smtplib.SMTPException) as e:
+        flash(f"Ошибка отправки почты: {e}", "danger")
+    return redirect(url_for("cabinet.work_order_print", order_id=order_id))
 
 
 @bp.get("/appointments/<int:appointment_id>")
@@ -190,10 +333,19 @@ def appointment_detail(appointment_id: int):
     appointment = db.session.execute(
         db.select(Appointment)
         .where(Appointment.id == appointment_id, Appointment.client_user_id == current_user.id)
-        .options(selectinload(Appointment.slots).selectinload(AppointmentSlot.slot))
+        .options(
+            selectinload(Appointment.slots).selectinload(AppointmentSlot.slot),
+            selectinload(Appointment.work_order),
+        )
     ).scalar_one_or_none()
     if not appointment:
         abort(404)
+    wo = appointment.work_order
+    work_order_paid_in_book = False
+    if wo is not None:
+        work_order_paid_in_book = work_order_has_positive_cashflow(wo.id) or bool(wo.is_paid)
+        recalculate_work_order_total(wo)
+        db.session.commit()
     nested, media_ids = _issue_media_nested_json(appointment)
     im_hash = issue_media_fingerprint(media_ids)
     return render_template(
@@ -203,6 +355,7 @@ def appointment_detail(appointment_id: int):
         issue_media_initial=nested,
         issue_media_hash=im_hash,
         visit_key=appointment.visit_fingerprint(),
+        work_order_paid_in_book=work_order_paid_in_book,
     )
 
 
@@ -561,6 +714,21 @@ def telegram():
         db.select(TelegramLink).where(TelegramLink.user_id == current_user.id)
     ).scalar_one_or_none()
     return render_template("cabinet/telegram.html", link=link)
+
+
+@bp.post("/telegram/unlink")
+@login_required
+def unlink_telegram():
+    link = db.session.execute(
+        db.select(TelegramLink).where(TelegramLink.user_id == current_user.id)
+    ).scalar_one_or_none()
+    if link:
+        db.session.delete(link)
+        db.session.commit()
+        flash("Telegram-аккаунт отвязан от бота.", "success")
+    else:
+        flash("Активная привязка Telegram не найдена.", "warning")
+    return redirect(url_for("cabinet.telegram"))
 
 
 @bp.post("/telegram/generate-token")

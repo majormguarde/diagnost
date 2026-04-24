@@ -8,7 +8,7 @@
       <h1 class="h2 m-0 neon-text-blue mono">ЗАКАЗ-НАРЯД №{{ order.id }}</h1>
     </div>
     <div class="d-flex gap-2">
-      {% if not order.is_paid %}
+      {% if not order_paid_in_book %}
       <form action="{{ url_for('admin.work_order_pay', order_id=order.id) }}" method="POST" class="d-inline">
         {{ form.hidden_tag() }}
         <button type="submit" class="btn btn-outline-success mono">
@@ -19,6 +19,12 @@
       <span class="btn btn-success mono disabled">
         <i class="bi bi-check-circle me-1"></i>ОПЛАЧЕНО.PAID
       </span>
+      <form action="{{ url_for('admin.work_order_unpay', order_id=order.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Отменить оплату? Будет создана обратная проводка в книге.');">
+        {{ form.hidden_tag() }}
+        <button type="submit" class="btn btn-outline-danger mono">
+          <i class="bi bi-arrow-counterclockwise me-1"></i>ОТМЕНИТЬ_ОПЛАТУ.UNPAY
+        </button>
+      </form>
       {% endif %}
       <a href="{{ url_for('admin.work_order_print', order_id=order.id) }}" target="_blank" class="btn btn-outline-warning mono">
         <i class="bi bi-printer me-1"></i>ПЕЧАТЬ.PRINT
@@ -1179,6 +1185,27 @@
           </button>
         </div>
       </form>
+
+      {% if org_settings and org_settings.sbp_phone %}
+      <div class="card bg-dark neon-border-blue shadow-lg mb-4">
+        <div class="card-header border-secondary border-opacity-25 bg-transparent py-3">
+          <h5 class="card-title m-0 mono text-white small"><i class="bi bi-qr-code me-2"></i>ОПЛАТА_ПО_СБП</h5>
+        </div>
+        <div class="card-body p-4 text-center">
+          <div class="mb-2 mono small text-secondary">Телефон для СБП:</div>
+          <div class="mono text-white fw-bold mb-3">{{ org_settings.sbp_phone }}</div>
+          <img
+            src="{{ url_for('admin.work_order_sbp_qr', order_id=order.id) }}"
+            alt="SBP QR"
+            class="img-fluid rounded border border-secondary border-opacity-25 bg-white p-2"
+            style="max-width: 260px;"
+          >
+          <div class="mt-3 mono smaller text-secondary">
+            Откройте приложение банка → Сканируйте QR → Оплата по СБП (по номеру телефона).
+          </div>
+        </div>
+      </div>
+      {% endif %}
 
       <!-- Client/Master Info -->
       <div class="card bg-dark neon-border-blue mb-4">

@@ -24,3 +24,8 @@ class Config:
     DEFAULT_DURATION_MIN = int(os.environ.get("DEFAULT_DURATION_MIN", "60"))
 
     TELEGRAM_TOKEN_TTL_MIN = int(os.environ.get("TELEGRAM_TOKEN_TTL_MIN", "10"))
+    # Telegram-бот: токен от @BotFather, имя без @ (для ссылок t.me и sendMessage)
+    TELEGRAM_BOT_TOKEN = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+    TELEGRAM_BOT_NAME = (os.environ.get("TELEGRAM_BOT_NAME") or "AutoDiagBot").strip().lstrip("@")
+    # polling — фоновый getUpdates при старте приложения; webhook — только POST /telegram/webhook
+    TELEGRAM_UPDATES_MODE = (os.environ.get("TELEGRAM_UPDATES_MODE") or "polling").strip().lower()

@@ -1,3 +1,4 @@
+import calendar as pycalendar
 from collections import defaultdict
 from itertools import groupby
 from functools import wraps
@@ -6,7 +7,7 @@ import os
 import re
 import smtplib
 
-from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for, current_app, send_from_directory
+from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, session, url_for, current_app, send_from_directory
 from flask_login import current_user, login_required
 from sqlalchemy import delete, exists, or_, and_
 from sqlalchemy.exc import IntegrityError
@@ -15,11 +16,19 @@ from werkzeug.utils import secure_filename
 
 from ...extensions import db
 from ...mail import MailConfigurationError, send_organization_email
+from ...telegram_bot import (
+    build_zakaz_delivery_message,
+    get_telegram_bot_token,
+    get_telegram_bot_username,
+    issue_work_order_telegram_code,
+    telegram_bot_send_message,
+)
 from ...models import (
     Master, Work, WorkCategory, TimeSlot, Appointment, WorkOrder,
     WorkOrderDocument, AppointmentSlot, OrganizationSettings, User,
     Banner, Review, WorkOrderItem, WorkOrderPart, WorkOrderDetail, WorkOrderMaterial,
     WorkOrderComplaintItem, WorkOrderAdditionalWork, AppointmentItem, Competency, CashFlow, MasterCompetency, AppointmentIssueMedia,
+    TelegramLink,
     TelegramLinkToken,
 )
 from ...utils import (
@@ -27,13 +36,18 @@ from ...utils import (
     client_whatsapp_url,
     delete_appointment_issue_media_file,
     issue_media_fingerprint,
+    materials_report_groups_for_period,
+    merged_work_order_inventory_rows,
     normalize_phone,
     normalize_telegram_username,
     normalize_win_number,
     normalize_work_title,
     problem_description_hash,
     recalculate_work_order_total,
-    merged_work_order_inventory_rows,
+    sync_work_order_is_paid_from_cashflow,
+    work_order_has_positive_cashflow,
+    work_order_share_text,
+    work_order_whatsapp_share_href,
     work_title_key,
 )
 from .forms import (
@@ -120,6 +134,45 @@ def _parse_work_hours_range(work_hours: str | None) -> tuple[time, time] | None:
 def _resequence(items) -> None:
     for index, item in enumerate(items, start=1):
         item.sort_order = index
+
+
+def _shift_calendar_month(year: int, month: int, delta: int) -> tuple[int, int]:
+    m = month + delta
+    y = year
+    while m < 1:
+        m += 12
+        y -= 1
+    while m > 12:
+        m -= 12
+        y += 1
+    return y, m
+
+
+def _work_order_calendar_weeks(year: int, month: int, counts_by_day: dict[int, int], today: date) -> list[list[dict]]:
+    """Сетка календаря (пн–вс): день месяца и число открытых нарядов, созданных в этот день."""
+    first_wd, n_days = pycalendar.monthrange(year, month)
+    cells: list[int | None] = [None] * first_wd + list(range(1, n_days + 1))
+    while len(cells) % 7 != 0:
+        cells.append(None)
+    weeks: list[list[dict]] = []
+    for i in range(0, len(cells), 7):
+        row = []
+        for d in cells[i : i + 7]:
+            if d is None:
+                row.append({"day": None, "count": 0, "is_today": False, "in_month": False})
+            else:
+                cnt = int(counts_by_day.get(d, 0))
+                row.append(
+                    {
+                        "day": d,
+                        "count": cnt,
+                        "is_today": bool(today.year == year and today.month == month and today.day == d),
+                        "in_month": True,
+                        "has_activity": cnt > 0,
+                    }
+                )
+        weeks.append(row)
+    return weeks
 
 
 @bp.get("/")
@@ -212,6 +265,50 @@ def index():
             cells.append({"date": day, "count": count, "level": level})
         master_load_rows.append({"master": master, "cells": cells, "weekly_total": weekly_total})
 
+    # --- Календарь заказ-нарядов «в работе» (статус opened) ---
+    today_d = datetime.now().date()
+    try:
+        wo_cal_year = int(request.args.get("wo_year", today_d.year))
+        wo_cal_month = int(request.args.get("wo_month", today_d.month))
+    except (TypeError, ValueError):
+        wo_cal_year, wo_cal_month = today_d.year, today_d.month
+    wo_cal_month = max(1, min(12, wo_cal_month))
+    wo_cal_year = max(2000, min(2100, wo_cal_year))
+    wo_prev_y, wo_prev_m = _shift_calendar_month(wo_cal_year, wo_cal_month, -1)
+    wo_next_y, wo_next_m = _shift_calendar_month(wo_cal_year, wo_cal_month, 1)
+
+    opened_orders = db.session.execute(
+        db.select(WorkOrder)
+        .where(WorkOrder.status == "opened")
+        .order_by(WorkOrder.created_at.desc())
+        .options(selectinload(WorkOrder.client), selectinload(WorkOrder.master))
+    ).scalars().all()
+    opened_count = len(opened_orders)
+    opened_total_amount = sum(int(o.total_amount or 0) for o in opened_orders)
+
+    counts_by_day: dict[int, int] = defaultdict(int)
+    for o in opened_orders:
+        cdt = o.created_at
+        if cdt and cdt.year == wo_cal_year and cdt.month == wo_cal_month:
+            counts_by_day[cdt.day] += 1
+
+    wo_cal_weeks = _work_order_calendar_weeks(wo_cal_year, wo_cal_month, counts_by_day, today_d)
+    month_names = (
+        "",
+        "Январь",
+        "Февраль",
+        "Март",
+        "Апрель",
+        "Май",
+        "Июнь",
+        "Июль",
+        "Август",
+        "Сентябрь",
+        "Октябрь",
+        "Ноябрь",
+        "Декабрь",
+    )
+
     return render_template(
         "admin/index.html",
         appointments_count=appointments_count,
@@ -222,6 +319,17 @@ def index():
         dashboard_days=dashboard_days,
         master_load_rows=master_load_rows,
         upcoming_appointments=upcoming_appointments,
+        wo_cal_year=wo_cal_year,
+        wo_cal_month=wo_cal_month,
+        wo_cal_month_name=month_names[wo_cal_month],
+        wo_prev_y=wo_prev_y,
+        wo_prev_m=wo_prev_m,
+        wo_next_y=wo_next_y,
+        wo_next_m=wo_next_m,
+        wo_cal_weeks=wo_cal_weeks,
+        opened_orders=opened_orders,
+        opened_count=opened_count,
+        opened_total_amount=opened_total_amount,
     )
 
 # --- Клиенты ---
@@ -348,7 +456,29 @@ def client_edit(user_id):
                 parts.append(f"{fname}: {err}")
         flash("Изменения не сохранены: " + "; ".join(parts), "danger")
 
-    return render_template("admin/clients/edit.html", form=form, client=client)
+    tg_link = db.session.execute(
+        db.select(TelegramLink).where(TelegramLink.user_id == client.id)
+    ).scalar_one_or_none()
+    return render_template("admin/clients/edit.html", form=form, client=client, tg_link=tg_link)
+
+
+@bp.post("/clients/edit/<int:user_id>/unlink-telegram")
+@admin_required
+def client_unlink_telegram(user_id: int):
+    client = db.session.get(User, user_id)
+    if not client or client.role != "client":
+        abort(404)
+    link = db.session.execute(
+        db.select(TelegramLink).where(TelegramLink.user_id == client.id)
+    ).scalar_one_or_none()
+    if link:
+        db.session.delete(link)
+        db.session.commit()
+        flash(f"Telegram-привязка клиента {client.name} удалена.", "success")
+    else:
+        flash("Привязка Telegram не найдена.", "warning")
+    return redirect(url_for("admin.client_edit", user_id=user_id))
+
 
 # --- Мастера ---
 
@@ -1888,6 +2018,7 @@ def work_order_detail(order_id):
 
     # Всегда пересчитываем итог при открытии, чтобы значение в БД не было устаревшим
     recalculate_work_order_total(order)
+    sync_work_order_is_paid_from_cashflow(order)
     db.session.commit()
 
     if form.validate_on_submit():
@@ -1898,30 +2029,30 @@ def work_order_detail(order_id):
 
         if order.status == "closed":
             order.closed_at = datetime.utcnow()
-            order.is_paid = True # Автоматически считаем оплаченным при закрытии
-            
             # Автоматическая запись в книгу приходов при закрытии заказ-наряда
-            # Проверяем, нет ли уже записи для этого заказа
             existing_cash = db.session.execute(
                 db.select(CashFlow).where(CashFlow.work_order_id == order.id, CashFlow.amount > 0)
-            ).scalar()
-            
+            ).scalar_one_or_none()
             if not existing_cash:
                 cash = CashFlow(
                     amount=order.total_amount or 0,
                     category="Оплата услуг",
                     description=f"Оплата заказ-наряда #{order.id}",
-                    work_order_id=order.id
+                    work_order_id=order.id,
                 )
                 db.session.add(cash)
-                
+        # is_paid только по факту прихода в книге (не «автоматом» при смене статуса)
+        sync_work_order_is_paid_from_cashflow(order)
+
         db.session.commit()
         flash("Заказ-наряд обновлен", "success")
         return redirect(url_for("admin.work_order_detail", order_id=order.id))
         
+    order_paid_in_book = work_order_has_positive_cashflow(order.id)
     return render_template(
         "admin/work_orders/detail.html",
         order=order,
+        order_paid_in_book=order_paid_in_book,
         form=form,
         doc_form=doc_form,
         item_form=item_form,
@@ -1941,18 +2072,16 @@ def work_order_pay(order_id):
     order = db.session.get(WorkOrder, order_id)
     if not order:
         abort(404)
-        
-    if order.is_paid:
-        flash("Заказ-наряд уже оплачен", "info")
+
+    if work_order_has_positive_cashflow(order.id):
+        flash("По этому заказ-наряду уже есть приход в книге.", "info")
         return redirect(url_for("admin.work_order_detail", order_id=order.id))
-        
-    order.is_paid = True
-    
+
     # Создаем запись в CashFlow если её нет
     existing_cash = db.session.execute(
         db.select(CashFlow).where(CashFlow.work_order_id == order.id, CashFlow.amount > 0)
-    ).scalar()
-    
+    ).scalar_one_or_none()
+
     if not existing_cash:
         cash = CashFlow(
             amount=order.total_amount or 0,
@@ -1961,10 +2090,88 @@ def work_order_pay(order_id):
             work_order_id=order.id
         )
         db.session.add(cash)
-    
+
+    sync_work_order_is_paid_from_cashflow(order)
     db.session.commit()
     flash("Оплата зафиксирована", "success")
     return redirect(url_for("admin.work_order_detail", order_id=order.id))
+
+
+@bp.post("/work-orders/<int:order_id>/unpay")
+@admin_required
+def work_order_unpay(order_id):
+    order = db.session.get(WorkOrder, order_id)
+    if not order:
+        abort(404)
+
+    # Если по книге нет положительного баланса — отменять нечего
+    if not work_order_has_positive_cashflow(order.id):
+        flash("По этому заказ-наряду нет оплаты в книге.", "info")
+        return redirect(url_for("admin.work_order_detail", order_id=order.id))
+
+    from sqlalchemy import func
+
+    paid_sum = db.session.execute(
+        db.select(func.coalesce(func.sum(CashFlow.amount), 0)).where(CashFlow.work_order_id == order.id)
+    ).scalar_one()
+    paid_sum = int(paid_sum or 0)
+    if paid_sum <= 0:
+        sync_work_order_is_paid_from_cashflow(order)
+        db.session.commit()
+        flash("Оплата уже отменена.", "info")
+        return redirect(url_for("admin.work_order_detail", order_id=order.id))
+
+    cash = CashFlow(
+        amount=-paid_sum,
+        category="Отмена оплаты",
+        description=f"Отмена оплаты заказ-наряда #{order.id}",
+        work_order_id=order.id,
+    )
+    db.session.add(cash)
+
+    sync_work_order_is_paid_from_cashflow(order)
+    db.session.commit()
+    flash("Оплата отменена (проведена по книге).", "success")
+    return redirect(url_for("admin.work_order_detail", order_id=order.id))
+
+
+@bp.get("/work-orders/<int:order_id>/sbp-qr.png")
+@admin_required
+def work_order_sbp_qr(order_id: int):
+    """QR для оплаты по СБП (технологический: кодирует телефон/сумму/назначение).
+
+    Для production-эквайринга обычно нужен провайдер СБП, который выдаёт payload вида https://qr.nspk.ru/...
+    Здесь генерируем QR с понятным payload для ручной оплаты по номеру телефона.
+    """
+    from io import BytesIO
+
+    import qrcode
+    from flask import send_file
+
+    order = db.session.get(WorkOrder, order_id)
+    if not order:
+        abort(404)
+
+    settings_obj = OrganizationSettings.get_settings()
+    phone = (getattr(settings_obj, "sbp_phone", None) or "").strip()
+    if not phone:
+        abort(404)
+
+    recalculate_work_order_total(order)
+    amount = int(order.total_amount or 0)
+
+    # Payload (неофициальный) — чтобы сканер/камера читали текст, а оператор/клиент мог быстро скопировать телефон/сумму.
+    payload = f"SBP|PHONE={phone}|AMOUNT={amount}|ORDER={order.id}"
+
+    qr = qrcode.QRCode(border=2, box_size=8)
+    qr.add_data(payload)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return send_file(buf, mimetype="image/png", download_name=f"work-order-{order.id}-sbp.png", max_age=0)
 
 @bp.get("/work-orders/<int:order_id>/print")
 @admin_required
@@ -1973,15 +2180,108 @@ def work_order_print(order_id):
     if not order:
         abort(404)
 
+    recalculate_work_order_total(order)
+    db.session.commit()
+
     merged_inventory_rows = merged_work_order_inventory_rows(order)
     settings = OrganizationSettings.get_settings()
+    org = (settings.name or "").strip()
+    org_disp = org or "Сервис"
+    print_abs = url_for("admin.work_order_print", order_id=order.id, _external=True)
+    client_email = ""
+    if order.client:
+        client_email = (order.client.client_email or "").strip()
+    telegram_delivery = session.pop("telegram_print_delivery", None)
+    if not telegram_delivery or int(telegram_delivery.get("order_id", 0)) != int(order.id):
+        telegram_delivery = None
     return render_template(
         "admin/work_orders/print.html",
         order=order,
         settings=settings,
         merged_inventory_rows=merged_inventory_rows,
         selected_materials_list=list(order.materials or []),
+        print_back_url=url_for("admin.work_order_detail", order_id=order.id),
+        print_back_label="← Вернуться к заказу",
+        whatsapp_share_href=work_order_whatsapp_share_href(order, org_disp, print_abs),
+        telegram_delivery=telegram_delivery,
+        telegram_code_post_url=url_for("admin.work_order_print_telegram_code", order_id=order.id),
+        telegram_bot_name=get_telegram_bot_username(),
+        send_email_url=url_for("admin.work_order_print_send_email", order_id=order.id),
+        send_email_available=bool(client_email),
+        send_email_hint="Укажите email клиента в карточке клиента",
     )
+
+
+@bp.post("/work-orders/<int:order_id>/print/telegram-code")
+@admin_required
+def work_order_print_telegram_code(order_id):
+    order = db.session.get(WorkOrder, order_id)
+    if not order:
+        abort(404)
+    code = issue_work_order_telegram_code(order.id)
+    bot = get_telegram_bot_username()
+    msg = build_zakaz_delivery_message(order=order, code=code, bot_username=bot)
+    link = db.session.execute(
+        db.select(TelegramLink).where(
+            TelegramLink.user_id == order.client_user_id,
+            TelegramLink.is_active.is_(True),
+        )
+    ).scalar_one_or_none()
+    if link and get_telegram_bot_token():
+        try:
+            telegram_bot_send_message(link.telegram_chat_id, msg)
+            flash("Сообщение с адресом бота и кодом отправлено клиенту в Telegram.", "success")
+        except Exception as e:
+            flash(f"Не удалось отправить в Telegram автоматически: {e}", "warning")
+    elif not link:
+        flash("Клиент не привязал Telegram в кабинете — передайте текст вручную.", "warning")
+    else:
+        flash("Укажите токен бота в разделе «Связь», чтобы отправить сообщение через API.", "warning")
+
+    session["telegram_print_delivery"] = {
+        "order_id": order.id,
+        "code": code,
+        "bot": bot,
+        "message": msg,
+    }
+    return redirect(url_for("admin.work_order_print", order_id=order.id))
+
+
+@bp.post("/work-orders/<int:order_id>/print/send-email")
+@admin_required
+def work_order_print_send_email(order_id):
+    order = db.session.get(WorkOrder, order_id)
+    if not order:
+        abort(404)
+    if not order.client:
+        flash("Нет данных клиента.", "danger")
+        return redirect(url_for("admin.work_order_print", order_id=order_id))
+    to = (order.client.client_email or "").strip()
+    if not to:
+        flash("У клиента не указан email для связи.", "warning")
+        return redirect(url_for("admin.work_order_print", order_id=order_id))
+    settings = OrganizationSettings.get_settings()
+    recalculate_work_order_total(order)
+    db.session.commit()
+    merged_inventory_rows = merged_work_order_inventory_rows(order)
+    subject = f"Заказ-наряд №{order.id}"
+    body_plain = work_order_share_text(order, (settings.name or "").strip() or "Сервис", max_length=8000)
+    body_html = render_template(
+        "email/work_order_compact.html",
+        order=order,
+        settings=settings,
+        merged_inventory_rows=merged_inventory_rows,
+        selected_materials_list=list(order.materials or []),
+    )
+    try:
+        send_organization_email([to], subject, body_plain, body_html=body_html, settings=settings)
+        flash(f"Письмо отправлено на {to}", "success")
+    except MailConfigurationError as e:
+        flash(str(e), "danger")
+    except (OSError, smtplib.SMTPException) as e:
+        flash(f"Ошибка отправки почты: {e}", "danger")
+    return redirect(url_for("admin.work_order_print", order_id=order_id))
+
 
 @bp.post("/work-orders/<int:order_id>/items/add")
 @admin_required
@@ -2889,18 +3189,31 @@ def contact():
     form = ContactSettingsForm(obj=settings_obj)
     if request.method == "GET":
         form.smtp_password.data = ""
+        form.telegram_bot_token.data = ""
 
     if form.validate_on_submit():
         old_smtp_pw = settings_obj.smtp_password
+        old_tg_tok = settings_obj.telegram_bot_token
         form.populate_obj(settings_obj)
         pwd = (form.smtp_password.data or "").strip()
         if not pwd:
             settings_obj.smtp_password = old_smtp_pw
+        tg_tok = (form.telegram_bot_token.data or "").strip()
+        if not tg_tok:
+            settings_obj.telegram_bot_token = old_tg_tok
+        settings_obj.org_telegram = normalize_telegram_username(settings_obj.org_telegram) or None
+        settings_obj.telegram_bot_username = normalize_telegram_username(settings_obj.telegram_bot_username) or None
+        settings_obj.site_public_url = (settings_obj.site_public_url or "").strip().rstrip("/") or None
         db.session.commit()
         flash("Параметры связи сохранены", "success")
         return redirect(url_for("admin.contact"))
 
-    return render_template("admin/contact.html", form=form)
+    webhook_url = ""
+    base = (getattr(settings_obj, "site_public_url", None) or "").strip().rstrip("/")
+    if base:
+        webhook_url = f"{base}/telegram/webhook"
+
+    return render_template("admin/contact.html", form=form, telegram_webhook_url=webhook_url)
 
 
 @bp.post("/contact/test-email")
@@ -2952,37 +3265,11 @@ def materials_report():
     else:
         end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
     
-    # Получаем все использованные материалы за период
-    materials = db.session.execute(
-        db.select(WorkOrderPart)
-        .join(WorkOrder)
-        .where(WorkOrder.created_at >= start_date)
-        .where(WorkOrder.created_at <= end_date)
-        .order_by(WorkOrder.created_at.desc())
-    ).scalars().all()
-    
-    # Группируем материалы по наименованию
-    materials_by_title = {}
-    total_cost = 0
-    
-    for material in materials:
-        if material.title not in materials_by_title:
-            materials_by_title[material.title] = {
-                'quantity': 0,
-                'unit': material.unit or 'шт.',
-                'total_cost': 0,
-                'items': []
-            }
-        
-        material_cost = material.quantity * material.price
-        materials_by_title[material.title]['quantity'] += material.quantity
-        materials_by_title[material.title]['total_cost'] += material_cost
-        materials_by_title[material.title]['items'].append(material)
-        total_cost += material_cost
-    
+    materials_groups, total_cost = materials_report_groups_for_period(start_date, end_date)
+
     return render_template(
-        "admin/materials_report.html", 
-        materials_by_title=materials_by_title,
+        "admin/materials_report.html",
+        materials_groups=materials_groups,
         total_cost=total_cost,
         start_date=start_date.strftime("%Y-%m-%d"),
         end_date=end_date.strftime("%Y-%m-%d")
@@ -3021,6 +3308,7 @@ def payouts():
             .join(WorkOrder)
             .where(WorkOrderItem.master_id == master.id)
             .where(WorkOrderItem.is_done == True)
+            .where(WorkOrder.status.in_(("opened", "closed")))
             .where(WorkOrder.created_at >= start_date)
             .where(WorkOrder.created_at <= end_date)
         ).scalars().all()
@@ -3032,6 +3320,7 @@ def payouts():
             .where(WorkOrder.master_id == master.id)
             .where(WorkOrderItem.master_id == None)
             .where(WorkOrderItem.is_done == True)
+            .where(WorkOrder.status.in_(("opened", "closed")))
             .where(WorkOrder.created_at >= start_date)
             .where(WorkOrder.created_at <= end_date)
         ).scalars().all()
@@ -3094,6 +3383,7 @@ def payouts_print():
             .join(WorkOrder)
             .where(WorkOrderItem.master_id == master.id)
             .where(WorkOrderItem.is_done == True)
+            .where(WorkOrder.status.in_(("opened", "closed")))
             .where(WorkOrder.created_at >= start_date)
             .where(WorkOrder.created_at <= end_date)
         ).scalars().all()
@@ -3103,6 +3393,7 @@ def payouts_print():
             .where(WorkOrder.master_id == master.id)
             .where(WorkOrderItem.master_id == None)
             .where(WorkOrderItem.is_done == True)
+            .where(WorkOrder.status.in_(("opened", "closed")))
             .where(WorkOrder.created_at >= start_date)
             .where(WorkOrder.created_at <= end_date)
         ).scalars().all()
@@ -3167,6 +3458,7 @@ def payouts_pay(master_id):
         )
         .where(WorkOrderItem.is_done == True)
         .where(WorkOrderItem.is_paid == False)
+        .where(WorkOrder.status.in_(("opened", "closed")))
         .where(WorkOrder.created_at >= start_date)
         .where(WorkOrder.created_at <= end_date)
     ).scalars().all()
@@ -3285,30 +3577,7 @@ def materials_report_print():
         end_date = today.replace(hour=23, minute=59, second=59)
     else:
         end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
-    materials = db.session.execute(
-        db.select(WorkOrderPart)
-        .join(WorkOrder)
-        .where(WorkOrder.created_at >= start_date)
-        .where(WorkOrder.created_at <= end_date)
-        .order_by(WorkOrder.created_at.desc())
-    ).scalars().all()
-    groups = {}
-    total_cost = 0
-    for material in materials:
-        if material.title not in groups:
-            groups[material.title] = {
-                "title": material.title,
-                "quantity": 0,
-                "unit": material.unit or "шт.",
-                "total_cost": 0,
-                "items": []
-            }
-        material_cost = material.quantity * material.price
-        groups[material.title]["quantity"] += material.quantity
-        groups[material.title]["total_cost"] += material_cost
-        groups[material.title]["items"].append(material)
-        total_cost += material_cost
-    materials_groups = sorted(groups.values(), key=lambda x: x["title"].lower())
+    materials_groups, total_cost = materials_report_groups_for_period(start_date, end_date)
     settings_obj = OrganizationSettings.get_settings()
     return render_template(
         "admin/materials_report_print.html",

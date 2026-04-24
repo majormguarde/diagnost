@@ -147,6 +147,85 @@
     </div>
   </div>
 
+  <!-- Календарь заказ-нарядов в работе (opened) -->
+  <div class="row g-4 mb-4">
+    <div class="col-12 col-xl-8">
+      <div class="card bg-dark neon-border-blue shadow-lg h-100">
+        <div class="card-header bg-transparent border-secondary border-opacity-25 py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <h5 class="card-title m-0 mono text-white mb-0">
+            <i class="bi bi-calendar3 me-2"></i>ЗАКАЗ-НАРЯДЫ В РАБОТЕ <span class="text-secondary smaller">(статус «Открыт»)</span>
+          </h5>
+          <div class="d-flex align-items-center gap-2 mono small">
+            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.index', wo_year=wo_prev_y, wo_month=wo_prev_m) }}">&laquo;</a>
+            <span class="text-white">{{ wo_cal_month_name }} {{ wo_cal_year }}</span>
+            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.index', wo_year=wo_next_y, wo_month=wo_next_m) }}">&raquo;</a>
+            <a class="btn btn-sm btn-outline-info" href="{{ url_for('admin.index') }}">Сегодня</a>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="wo-cal-weekdays text-secondary mono small mb-2">
+            <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
+          </div>
+          {% for week in wo_cal_weeks %}
+          <div class="wo-cal-week">
+            {% for cell in week %}
+            <div class="wo-cal-cell {% if not cell.in_month %}wo-cal-out{% elif cell.is_today %}wo-cal-today{% endif %} {% if cell.has_activity %}wo-cal-busy{% endif %}">
+              {% if cell.day %}
+              <div class="wo-cal-daynum">{{ cell.day }}</div>
+              {% if cell.count %}
+              <div class="wo-cal-badge" title="Открытых нарядов, заведённых в этот день: {{ cell.count }}">{{ cell.count }}</div>
+              {% else %}
+              <div class="wo-cal-empty"></div>
+              {% endif %}
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+          {% endfor %}
+          <p class="text-secondary mono smaller mt-3 mb-0">
+            В ячейке — число заказ-нарядов в статусе «Открыт», у которых дата создания попадает в этот день. Сводка по всем открытым — справа.
+          </p>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-xl-4">
+      <div class="card bg-dark neon-border-blue shadow-lg h-100">
+        <div class="card-header bg-transparent border-secondary border-opacity-25 py-3">
+          <h5 class="card-title m-0 mono text-white">
+            <i class="bi bi-receipt-cutoff me-2"></i>СВОДКА
+          </h5>
+        </div>
+        <div class="card-body">
+          <div class="mb-3">
+            <div class="text-secondary mono small">ОТКРЫТО СЕЙЧАС</div>
+            <div class="display-6 text-warning fw-bold mono">{{ opened_count }}</div>
+            <div class="text-secondary mono smaller mt-1">на сумму <span class="text-white">{{ "{:,.0f}".format(opened_total_amount).replace(',', ' ') }} ₽</span></div>
+          </div>
+          <div class="border-top border-secondary border-opacity-25 pt-3">
+            <div class="text-secondary mono small mb-2">СПИСОК (до 12)</div>
+            {% if not opened_orders %}
+            <div class="text-secondary mono smaller">Нет заказ-нарядов в статусе «Открыт».</div>
+            {% else %}
+            <ul class="list-unstyled mb-0 wo-cal-open-list">
+              {% for o in opened_orders[:12] %}
+              <li class="mb-2">
+                <a href="{{ url_for('admin.work_order_detail', order_id=o.id) }}" class="text-decoration-none text-info mono small">
+                  №{{ o.id }}</a>
+                <span class="text-secondary smaller"> · {{ (o.total_amount or 0)|int }} ₽</span>
+                {% if o.client %}<div class="text-white smaller text-truncate">{{ o.client.name }}</div>{% endif %}
+              </li>
+              {% endfor %}
+            </ul>
+            {% if opened_count > 12 %}
+            <a href="{{ url_for('admin.work_orders') }}" class="btn btn-sm btn-outline-info mono mt-2 w-100">Все наряды</a>
+            {% endif %}
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="row g-4">
     <div class="col-xl-7">
       <div class="card bg-dark neon-border-blue shadow-lg h-100">
@@ -389,6 +468,62 @@
       overflow-x: auto;
       padding-bottom: 0.25rem;
     }
+  }
+
+  .wo-cal-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 0.35rem;
+    text-align: center;
+  }
+  .wo-cal-week {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 0.35rem;
+    margin-bottom: 0.35rem;
+  }
+  .wo-cal-cell {
+    min-height: 72px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    padding: 0.35rem 0.4rem;
+    position: relative;
+  }
+  .wo-cal-cell.wo-cal-out {
+    background: transparent;
+    border-color: transparent;
+  }
+  .wo-cal-cell.wo-cal-today {
+    border-color: rgba(13, 202, 240, 0.65);
+    box-shadow: 0 0 0 1px rgba(13, 202, 240, 0.25) inset;
+  }
+  .wo-cal-cell.wo-cal-busy {
+    background: rgba(255, 193, 7, 0.12);
+  }
+  .wo-cal-daynum {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.55);
+    font-family: ui-monospace, monospace;
+  }
+  .wo-cal-today .wo-cal-daynum {
+    color: #0dcaf0;
+    font-weight: 700;
+  }
+  .wo-cal-badge {
+    margin-top: 0.25rem;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #ffc107;
+    font-family: ui-monospace, monospace;
+    text-align: center;
+  }
+  .wo-cal-empty {
+    min-height: 1.25rem;
+  }
+  .wo-cal-open-list li {
+    border-left: 2px solid rgba(13, 202, 240, 0.35);
+    padding-left: 0.5rem;
   }
 </style>
 {% endblock %}

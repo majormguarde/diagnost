@@ -14,7 +14,7 @@
       <div class="card bg-dark neon-border-blue shadow-lg">
         <div class="card-header border-secondary border-opacity-25 bg-transparent py-3">
           <h5 class="card-title m-0 mono text-white small">
-            <i class="bi bi-chat-dots me-2"></i>МЕССЕНДЖЕРЫ И ПОЧТА
+            <i class="bi bi-chat-dots me-2"></i>КОНТАКТЫ И МЕССЕНДЖЕРЫ
           </h5>
         </div>
         <div class="card-body">
@@ -22,21 +22,55 @@
             {{ form.hidden_tag() }}
             <div class="row mb-3">
               <div class="col-md-6">
+                <label class="form-label mono text-secondary smaller">{{ form.phone.label.text | upper }}</label>
+                {{ form.phone(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="+7 …") }}
+                <div class="form-text text-secondary smaller mono">Публичный телефон (сайт, печать, подпись).</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label mono text-secondary smaller">{{ form.email.label.text | upper }}</label>
+                {{ form.email(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="info@…") }}
+              </div>
+            </div>
+            <div class="row mb-3">
+              <div class="col-md-6">
                 <label class="form-label mono text-secondary smaller">{{ form.org_whatsapp.label.text | upper }}</label>
                 {{ form.org_whatsapp(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="+7 или 8 …") }}
-                <div class="form-text text-secondary smaller mono">Публичный номер для ссылки wa.me (сайт, подпись).</div>
+                <div class="form-text text-secondary smaller mono">Номер для ссылки wa.me (сайт, документы).</div>
               </div>
               <div class="col-md-6">
                 <label class="form-label mono text-secondary smaller">{{ form.org_telegram.label.text | upper }}</label>
                 {{ form.org_telegram(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="username") }}
+                <div class="form-text text-secondary smaller mono">Ник организации (не бот) — для контактов на сайте.</div>
+              </div>
+            </div>
+
+            <h6 class="mono text-info border-bottom border-secondary border-opacity-25 pb-2 mb-3 mt-4">TELEGRAM-БОТ (ЗАКАЗ-НАРЯДЫ ПО КОДУ)</h6>
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <label class="form-label mono text-secondary smaller">{{ form.telegram_bot_username.label.text | upper }}</label>
+                {{ form.telegram_bot_username(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="MyDiagBot") }}
+                <div class="form-text text-secondary smaller mono">Как в @username в Telegram (без @).</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label mono text-secondary smaller">{{ form.telegram_bot_token.label.text | upper }}</label>
+                {{ form.telegram_bot_token(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="Оставьте пустым, чтобы не менять") }}
+                <div class="form-text text-secondary smaller mono">Токен из BotFather. Хранится в базе — ограничьте доступ к админке.</div>
               </div>
             </div>
             <div class="mb-4">
-              <label class="form-label mono text-secondary smaller">{{ form.email.label.text | upper }}</label>
-              {{ form.email(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="info@…") }}
+              <label class="form-label mono text-secondary smaller">{{ form.site_public_url.label.text | upper }}</label>
+              {{ form.site_public_url(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="https://example.com") }}
+              {% if telegram_webhook_url %}
+              <div class="form-text text-secondary smaller mono mt-1">
+                Вебхук для BotFather (HTTPS):<br>
+                <code class="user-select-all text-info">{{ telegram_webhook_url }}</code>
+              </div>
+              {% else %}
+              <div class="form-text text-secondary smaller mono mt-1">Укажите URL — подскажем точный адрес вебхука <code>/telegram/webhook</code>.</div>
+              {% endif %}
             </div>
 
-            <h6 class="mono text-info border-bottom border-secondary border-opacity-25 pb-2 mb-3 mt-4">SMTP (исходящая почта)</h6>
+            <h6 class="mono text-info border-bottom border-secondary border-opacity-25 pb-2 mb-3 mt-4">SMTP (ИСХОДЯЩАЯ ПОЧТА)</h6>
             <div class="row mb-3">
               <div class="col-md-8">
                 <label class="form-label mono text-secondary smaller">{{ form.smtp_host.label.text | upper }}</label>
@@ -86,8 +120,10 @@
     <div class="col-lg-4">
       <div class="card bg-dark border border-secondary border-opacity-25">
         <div class="card-body mono small text-secondary">
-          <p class="mb-2">Поля <strong class="text-white">WhatsApp</strong> и <strong class="text-white">Telegram</strong> здесь — контакты <em>организации</em> (сайт, документы). Контакты клиентов задаются при регистрации и в справочнике «Клиенты».</p>
-          <p class="mb-0">Письма с сервера (заявки, тест) идут через SMTP ниже. Пароль хранится в базе — для почтовых сервисов используйте пароль приложения.</p>
+          <p class="mb-2"><strong class="text-white">WhatsApp / Telegram</strong> организации — публичные контакты. <strong class="text-white">Бот</strong> — отдельно: имя и токен для выдачи нарядов по коду <code>/zakaz</code>.</p>
+          <p class="mb-2">Режим бота: переменная <code class="text-white">TELEGRAM_UPDATES_MODE</code> — <code>polling</code> (long polling в фоне при старте приложения, по умолчанию) или <code>webhook</code> (только HTTPS-вебхук). Подробности в файле <code class="text-white">TELEGRAM_BOT.md</code> в корне проекта.</p>
+          <p class="mb-2">В <strong class="text-white">BotFather</strong> для режима webhook задайте URL из поля «Публичный URL» + <code>/telegram/webhook</code>.</p>
+          <p class="mb-0">Пароль SMTP хранится в базе — используйте пароль приложения у почтового провайдера.</p>
         </div>
       </div>
     </div>

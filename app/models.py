@@ -322,6 +322,24 @@ class WorkOrder(db.Model):
         "WorkOrderAdditionalWork", back_populates="work_order", cascade="all, delete-orphan"
     )
     complaints = db.relationship("WorkOrderComplaintItem", back_populates="work_order", cascade="all, delete-orphan")
+    telegram_delivery_codes = db.relationship(
+        "WorkOrderTelegramCode", back_populates="work_order", cascade="all, delete-orphan"
+    )
+
+
+class WorkOrderTelegramCode(db.Model):
+    """Одноразовый код для получения текста заказ-наряда через Telegram-бота (/zakaz КОД)."""
+
+    __tablename__ = "work_order_telegram_codes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    work_order_id = db.Column(db.Integer, db.ForeignKey("work_orders.id"), nullable=False, index=True)
+    code = db.Column(db.String(24), nullable=False, unique=True, index=True)
+    expires_at = db.Column(db.DateTime, nullable=False, index=True)
+    used_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    work_order = db.relationship("WorkOrder", back_populates="telegram_delivery_codes")
 
 
 class WorkOrderComplaintItem(db.Model):
@@ -477,6 +495,12 @@ class OrganizationSettings(db.Model):
     smtp_password = db.Column(db.String(255), nullable=True)
     smtp_use_tls = db.Column(db.Boolean, nullable=False, default=True)
     smtp_from = db.Column(db.String(120), nullable=True)
+    # Telegram-бот (заказ-наряды по коду / webhook); публичный URL — для подсказки настройки вебхука
+    telegram_bot_username = db.Column(db.String(64), nullable=True)
+    telegram_bot_token = db.Column(db.String(255), nullable=True)
+    site_public_url = db.Column(db.String(255), nullable=True)
+    # СБП (оплата по QR/по телефону)
+    sbp_phone = db.Column(db.String(32), nullable=True)
 
     @classmethod
     def get_settings(cls):

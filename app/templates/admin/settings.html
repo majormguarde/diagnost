@@ -39,6 +39,11 @@
                                 {{ settings_form.email(class="form-control bg-dark text-white border-secondary border-opacity-50 mono") }}
                             </div>
                         </div>
+                        <div class="mb-3">
+                            <label class="form-label mono text-secondary smaller">{{ settings_form.sbp_phone.label | upper }}</label>
+                            {{ settings_form.sbp_phone(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="+79990000000") }}
+                            <div class="form-text text-secondary mono smaller">Используется для QR-кода оплаты по СБП в заказ-наряде.</div>
+                        </div>
                         <div class="row mb-3">
                             <div class="col-md-8">
                                 <label class="form-label mono text-secondary smaller">{{ settings_form.work_hours.label | upper }}</label>
@@ -163,22 +168,22 @@
                 </div>
             </div>
 
-            <!-- Очистка данных -->
+            <!-- Технологические операции -->
             <div class="card bg-dark neon-border-red shadow-lg mt-4">
                 <div class="card-header border-danger border-opacity-25 bg-transparent py-3">
                     <h5 class="card-title m-0 mono text-danger small">
-                        <i class="bi bi-trash3 me-2"></i>ОЧИСТКА ДАННЫХ
+                        <i class="bi bi-gear-wide-connected me-2"></i>ТЕХНОЛОГИЧЕСКИЕ ОПЕРАЦИИ
                     </h5>
                 </div>
                 <div class="card-body">
                     <div class="alert bg-dark border-warning text-warning mono smaller mb-4 py-2">
-                        <i class="bi bi-exclamation-triangle me-2"></i>ВНИМАНИЕ: ЭТО УДАЛИТ ВСЕ ФИНАНСОВЫЕ ДАННЫЕ!
+                        <i class="bi bi-exclamation-triangle me-2"></i>ВНИМАНИЕ: ЭТО УДАЛИТ ВСЕ ДАННЫЕ О ПРИХОДАХ/РАСХОДАХ!
                     </div>
-                    <form method="POST" action="{{ url_for('admin.cleanup_data') }}" onsubmit="return confirm('ВЫ УВЕРЕНЫ? ЭТО УДАЛИТ ВСЕ ЗАПИСИ О ДЕНЕЖНЫХ ПОТОКАХ И СБРОСИТ СТАТУСЫ ОПЛАТЫ.')">
+                    <form method="POST" action="{{ url_for('admin.cleanup_data') }}" onsubmit="return confirm('Удалить финансовые данные? Будут удалены все записи о приходах/расходах и сброшены статусы оплаты.')">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <div class="d-grid">
                             <button type="submit" class="btn btn-outline-danger mono py-2">
-                                <i class="bi bi-trash3 me-2"></i>ОЧИСТИТЬ_ДАННЫЕ.EXE
+                                <i class="bi bi-trash3 me-2"></i>УДАЛИТЬ_ФИНАНСОВЫЕ_ДАННЫЕ.EXE
                             </button>
                         </div>
                     </form>

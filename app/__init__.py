@@ -76,6 +76,10 @@ def _ensure_runtime_schema() -> None:
         ("smtp_password", "VARCHAR(255)"),
         ("smtp_use_tls", "INTEGER DEFAULT 1"),
         ("smtp_from", "VARCHAR(120)"),
+        ("telegram_bot_username", "VARCHAR(64)"),
+        ("telegram_bot_token", "VARCHAR(255)"),
+        ("site_public_url", "VARCHAR(255)"),
+        ("sbp_phone", "VARCHAR(32)"),
     ):
         if col not in org_columns:
             db.session.execute(text(f"ALTER TABLE organization_settings ADD COLUMN {col} {ddl}"))
@@ -108,6 +112,21 @@ def _ensure_runtime_schema() -> None:
             FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
         )
     """))
+    db.session.commit()
+
+    db.session.execute(
+        text("""
+        CREATE TABLE IF NOT EXISTS work_order_telegram_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            work_order_id INTEGER NOT NULL,
+            code VARCHAR(24) NOT NULL UNIQUE,
+            expires_at DATETIME NOT NULL,
+            used_at DATETIME,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (work_order_id) REFERENCES work_orders(id)
+        )
+    """)
+    )
     db.session.commit()
 
     # Добавляем колонку complaint_description в work_orders, если её нет
@@ -174,8 +193,18 @@ def create_app() -> Flask:
 
     @app.context_processor
     def inject_settings():
-        return dict(org_settings=OrganizationSettings.get_settings())
+        from .telegram_bot import get_telegram_bot_username
+
+        org_settings = OrganizationSettings.get_settings()
+        return dict(
+            org_settings=org_settings,
+            telegram_bot_name=get_telegram_bot_username(),
+        )
 
     register_commands(app)
+
+    from .telegram_poller import start_telegram_poller
+
+    start_telegram_poller(app)
 
     return app

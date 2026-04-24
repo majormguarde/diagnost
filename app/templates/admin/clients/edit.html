@@ -83,6 +83,31 @@
           </div>
         </div>
       </form>
+
+      {% if tg_link %}
+      <div class="border-top border-secondary border-opacity-25 mt-4 pt-4">
+        <h6 class="mono text-secondary mb-3"><i class="bi bi-telegram me-2"></i>TELEGRAM-ПРИВЯЗКА</h6>
+        <div class="alert alert-success py-2 d-flex align-items-center justify-content-between gap-3">
+          <div class="small">
+            <i class="bi bi-check-circle-fill me-2"></i>
+            Аккаунт привязан · chat_id: <code>{{ tg_link.telegram_chat_id }}</code>
+            {% if tg_link.linked_at %} · с {{ tg_link.linked_at.strftime('%d.%m.%Y') }}{% endif %}
+          </div>
+          <form action="{{ url_for('admin.client_unlink_telegram', user_id=client.id) }}" method="POST"
+                onsubmit="return confirm('Отвязать Telegram-аккаунт клиента?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-outline-danger mono">
+              <i class="bi bi-x-circle me-1"></i>ОТВЯЗАТЬ
+            </button>
+          </form>
+        </div>
+      </div>
+      {% else %}
+      <div class="border-top border-secondary border-opacity-25 mt-4 pt-4">
+        <h6 class="mono text-secondary mb-3"><i class="bi bi-telegram me-2"></i>TELEGRAM-ПРИВЯЗКА</h6>
+        <p class="text-secondary small mb-0"><i class="bi bi-dash-circle me-2"></i>Аккаунт Telegram не привязан.</p>
+      </div>
+      {% endif %}
     </div>
   </div>
 </div>

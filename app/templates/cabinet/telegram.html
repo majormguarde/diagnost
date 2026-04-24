@@ -26,16 +26,27 @@
         </div>
         <div class="card-body">
           <p class="text-secondary mb-4">
-            Привяжите Telegram, чтобы получать уведомления по заявкам и быстро открывать документы в мессенджере.
+            Привяжите Telegram, чтобы получать уведомления по заявкам и заказ-наряды: сервис пришлёт адрес бота и код —
+            после привязки отправьте боту <code>/zakaz КОД</code>, и бот пришлёт текст наряда.
           </p>
 
           {% if link and link.is_active %}
-          <div class="alert alert-success d-flex align-items-center">
-            <i class="bi bi-check-circle-fill me-2 fs-4"></i>
-            <div>
-              <strong>Аккаунт Telegram успешно привязан.</strong><br>
-              Бот: <a href="https://t.me/{{ config.TELEGRAM_BOT_NAME or 'AutoDiagBot' }}" target="_blank">@{{ config.TELEGRAM_BOT_NAME or 'AutoDiagBot' }}</a>
+          <div class="alert alert-success d-flex align-items-center justify-content-between gap-3 flex-wrap">
+            <div class="d-flex align-items-start gap-2">
+              <i class="bi bi-check-circle-fill fs-4 mt-1 flex-shrink-0"></i>
+              <div>
+                <strong>Аккаунт Telegram успешно привязан.</strong><br>
+                Бот: <a href="https://t.me/{{ telegram_bot_name }}" target="_blank">@{{ telegram_bot_name }}</a>
+                <p class="mb-0 mt-2 small">Заказ-наряд от сервиса: откройте того же бота и отправьте <code>/zakaz КОД</code> (код выдаётся на печатной форме наряда).</p>
+              </div>
             </div>
+            <form action="{{ url_for('cabinet.unlink_telegram') }}" method="POST"
+                  onsubmit="return confirm('Отвязать Telegram-аккаунт? Уведомления перестанут приходить.')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-outline-danger mono text-nowrap">
+                <i class="bi bi-x-circle me-1"></i>ОТВЯЗАТЬ
+              </button>
+            </form>
           </div>
           {% else %}
           <div class="alert alert-warning">
@@ -53,7 +64,7 @@
             <div class="text-secondary mono small mb-3">КАК ПРИВЯЗАТЬ TELEGRAM</div>
             <ol class="mb-0 text-white">
               <li class="mb-2">Сгенерируйте код привязки кнопкой выше.</li>
-              <li class="mb-2">Откройте бота: <a href="https://t.me/{{ config.TELEGRAM_BOT_NAME or 'AutoDiagBot' }}" target="_blank">@{{ config.TELEGRAM_BOT_NAME or 'AutoDiagBot' }}</a>.</li>
+              <li class="mb-2">Откройте бота: <a href="https://t.me/{{ telegram_bot_name }}" target="_blank">@{{ telegram_bot_name }}</a>.</li>
               <li>Отправьте команду <code>/start ваш_код</code>.</li>
             </ol>
           </div>

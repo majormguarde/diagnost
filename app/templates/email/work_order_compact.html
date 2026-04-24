@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #111; line-height: 1.25; }
+    h1 { font-size: 13px; margin: 0 0 6px; }
+    .muted { color: #555; font-size: 10px; }
+    table.meta td { padding: 1px 8px 1px 0; vertical-align: top; }
+    table.meta th { padding: 1px 6px 1px 0; text-align: left; font-weight: normal; color: #555; width: 110px; }
+    .sec { font-weight: bold; font-size: 11px; margin: 10px 0 4px; border-bottom: 1px solid #ccc; }
+    table.grid { border-collapse: collapse; width: 100%; font-size: 10px; }
+    table.grid th, table.grid td { border: 1px solid #ccc; padding: 2px 4px; }
+    table.grid th { background: #f5f5f5; text-align: left; }
+    .num { text-align: right; white-space: nowrap; }
+    .total { font-weight: bold; font-size: 12px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Заказ-наряд №{{ order.id }}</h1>
+  <div class="muted">{{ (settings.name if settings else '') or 'Сервис' }} · {{ order.created_at.strftime('%d.%m.%Y') }}</div>
+
+  <table class="meta" cellpadding="0" cellspacing="0" style="margin-top:8px;">
+    <tr><th>Исполнитель</th><td>{{ (settings.name if settings else '') or '—' }}, т. {{ (settings.phone if settings else None) or '—' }}</td></tr>
+    <tr><th>Мастер</th><td>{{ order.master.name if order.master else '—' }}</td></tr>
+    <tr><th>Заказчик</th><td>{{ order.client.name if order.client else '—' }}, т. {{ order.client.phone if order.client else '—' }}</td></tr>
+    {% if order.appointment %}
+    <tr><th>Авто</th><td>{{ (order.appointment.car_make or '') ~ ' ' ~ (order.appointment.car_model or '') }}, {{ order.appointment.car_number or '—' }}</td></tr>
+    {% endif %}
+  </table>
+
+  <div class="sec">Работы</div>
+  <table class="grid">
+    <thead><tr><th>№</th><th>Наименование</th><th class="num">Норм</th><th class="num">Факт</th><th class="num">Руб</th><th>Статус</th></tr></thead>
+    <tbody>
+      {% for item in order.items %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ item.title }}</td>
+        <td class="num">{{ item.duration }}</td>
+        <td class="num">{{ item.actual_duration or 0 }}</td>
+        <td class="num">{{ "{:,.0f}".format(item.price).replace(',', ' ') }}</td>
+        <td>{% if item.is_done %}гот{% else %}нет{% endif %}</td>
+      </tr>
+      {% endfor %}
+      {% if not order.items %}<tr><td colspan="6">—</td></tr>{% endif %}
+    </tbody>
+  </table>
+
+  {% if order.additional_works %}
+  <div class="sec">Доп. работы</div>
+  <table class="grid"><thead><tr><th>№</th><th>Наименование</th><th class="num">Руб</th></tr></thead><tbody>
+    {% for aw in order.additional_works %}
+    <tr><td>{{ loop.index }}</td><td>{{ aw.title }}</td><td class="num">{{ "{:,.0f}".format(aw.price).replace(',', ' ') }}</td></tr>
+    {% endfor %}
+  </tbody></table>
+  {% endif %}
+
+  {% if merged_inventory_rows %}
+  <div class="sec">Детали</div>
+  <table class="grid"><thead><tr><th>№</th><th>Наименование</th><th class="num">Кол-во</th><th class="num">Сумма</th></tr></thead><tbody>
+    {% for _, inv_row in merged_inventory_rows %}
+    <tr><td>{{ loop.index }}</td><td>{{ inv_row.title }}</td><td class="num">{{ inv_row.quantity }} {{ inv_row.unit }}</td><td class="num">{{ "{:,.0f}".format(inv_row.price * inv_row.quantity).replace(',', ' ') }}</td></tr>
+    {% endfor %}
+  </tbody></table>
+  {% endif %}
+
+  {% if selected_materials_list %}
+  <div class="sec">Материалы</div>
+  <table class="grid"><thead><tr><th>№</th><th>Наименование</th><th class="num">Кол-во</th><th class="num">Сумма</th></tr></thead><tbody>
+    {% for m in selected_materials_list %}
+    <tr><td>{{ loop.index }}</td><td>{{ m.title }}</td><td class="num">{{ m.quantity }} {{ m.unit }}</td><td class="num">{{ "{:,.0f}".format(m.price * m.quantity).replace(',', ' ') }}</td></tr>
+    {% endfor %}
+  </tbody></table>
+  {% endif %}
+
+  {% if order.inspection_results %}
+  <div class="sec">Осмотр</div>
+  <div style="font-size:10px;">{{ order.inspection_results }}</div>
+  {% endif %}
+
+  <div class="total">Итого: {{ "{:,.0f}".format(order.total_amount or 0).replace(',', ' ') }} ₽</div>
+</body>
+</html>

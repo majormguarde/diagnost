@@ -109,6 +109,7 @@ class DocumentUploadForm(FlaskForm):
 
 class ContactSettingsForm(FlaskForm):
     """Мессенджеры сервиса, контактный email и SMTP (страница «Связь»)."""
+    phone = StringField("Телефон организации (публичный)", validators=[Optional(), Length(max=32)])
     org_whatsapp = StringField("WhatsApp организации (номер)", validators=[Optional(), Length(max=32)])
     org_telegram = StringField("Telegram организации (ник без @)", validators=[Optional(), Length(max=64)])
     email = StringField("Email для связи", validators=[Optional(), Email(), Length(max=120)])
@@ -118,6 +119,9 @@ class ContactSettingsForm(FlaskForm):
     smtp_password = PasswordField("SMTP пароль", validators=[Optional(), Length(max=255)])
     smtp_use_tls = BooleanField("Использовать TLS", default=True)
     smtp_from = StringField("Адрес отправителя (From)", validators=[Optional(), Email(), Length(max=120)])
+    telegram_bot_username = StringField("Имя Telegram-бота (без @)", validators=[Optional(), Length(max=64)])
+    telegram_bot_token = PasswordField("Токен бота (BotFather)", validators=[Optional(), Length(max=255)])
+    site_public_url = StringField("Публичный URL сайта (https://…)", validators=[Optional(), Length(max=255)])
     submit = SubmitField("Сохранить")
 
 
@@ -126,6 +130,7 @@ class OrganizationSettingsForm(FlaskForm):
     address = StringField("Адрес", validators=[Optional()])
     phone = StringField("Телефон", validators=[Optional()])
     email = StringField("Email", validators=[Optional()])
+    sbp_phone = StringField("Телефон для СБП", validators=[Optional(), Length(max=32)])
     work_hours = StringField("Часы работы", validators=[Optional()])
     slot_minutes = IntegerField("Интервал слота (мин)", validators=[DataRequired(), NumberRange(min=15, max=240)], default=60)
     description = TextAreaField("Описание (для сайта)", validators=[Optional()])
