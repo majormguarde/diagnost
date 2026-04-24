@@ -12,6 +12,10 @@ from .models import User
 
 
 def _ensure_runtime_schema() -> None:
+    # На новом окружении таблиц может ещё не быть: сначала создаём базовую схему,
+    # затем ниже аккуратно добавляем недостающие колонки для старых SQLite-баз.
+    db.create_all()
+
     rows = db.session.execute(text("PRAGMA table_info(organization_settings)")).mappings().all()
     columns = {r["name"] for r in rows}
     if "slot_minutes" not in columns:
@@ -84,8 +88,6 @@ def _ensure_runtime_schema() -> None:
         if col not in org_columns:
             db.session.execute(text(f"ALTER TABLE organization_settings ADD COLUMN {col} {ddl}"))
             db.session.commit()
-
-    db.create_all()
 
     # Создаем таблицы для деталей и материалов, если их нет
     db.session.execute(text("""
