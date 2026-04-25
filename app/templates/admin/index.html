@@ -1,6 +1,6 @@
 {% extends "admin/admin_base.html" %}
 {% block content %}
-<div class="container-fluid py-4">
+<div id="dashboard-root" class="container-fluid py-4" data-refresh-url="{{ request.full_path if request.query_string else request.path }}" data-refresh-ms="10000">
   <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4 border-bottom border-secondary border-opacity-25 pb-3">
     <div>
       <span class="badge neon-border-blue text-white mono mb-2">SYSTEM_OVERVIEW.EXE</span>
@@ -526,4 +526,42 @@
     padding-left: 0.5rem;
   }
 </style>
+<script>
+  (function () {
+    const root = document.getElementById('dashboard-root');
+    if (!root) return;
+
+    const refreshUrl = root.dataset.refreshUrl || window.location.pathname + window.location.search;
+    const refreshMs = Math.max(5000, parseInt(root.dataset.refreshMs || '10000', 10));
+    let isRefreshing = false;
+
+    async function refreshDashboard() {
+      if (isRefreshing || document.hidden) return;
+      isRefreshing = true;
+      try {
+        const response = await fetch(refreshUrl, {
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (!response.ok) return;
+        const html = await response.text();
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const nextRoot = doc.getElementById('dashboard-root');
+        if (nextRoot) {
+          root.innerHTML = nextRoot.innerHTML;
+        }
+      } catch (error) {
+        // Keep the current dashboard visible if a background refresh fails.
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
+    window.setInterval(refreshDashboard, refreshMs);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) refreshDashboard();
+    });
+  })();
+</script>
 {% endblock %}
