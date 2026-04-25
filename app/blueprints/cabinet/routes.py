@@ -259,6 +259,40 @@ def work_order_print(order_id: int):
     )
 
 
+@bp.get("/work-orders/<int:order_id>/sbp-qr.png")
+@login_required
+def work_order_sbp_qr(order_id: int):
+    """QR для оплаты по СБП (клиентская версия): доступен только владельцу заказа."""
+    from io import BytesIO
+
+    import qrcode
+    from flask import send_file
+
+    order = db.session.get(WorkOrder, order_id)
+    if not order or order.client_user_id != current_user.id:
+        abort(404)
+
+    settings_obj = OrganizationSettings.get_settings()
+    phone = (getattr(settings_obj, "sbp_phone", None) or "").strip()
+    if not phone:
+        abort(404)
+
+    recalculate_work_order_total(order)
+    amount = int(order.total_amount or 0)
+
+    payload = f"SBP|PHONE={phone}|AMOUNT={amount}|ORDER={order.id}"
+
+    qr = qrcode.QRCode(border=2, box_size=8)
+    qr.add_data(payload)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return send_file(buf, mimetype="image/png", download_name=f"work-order-{order.id}-sbp.png", max_age=0)
+
+
 @bp.post("/work-orders/<int:order_id>/print/telegram-code")
 @login_required
 def work_order_print_telegram_code(order_id: int):

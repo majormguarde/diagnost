@@ -2,16 +2,16 @@
 {% block content %}
 <div class="container-fluid py-4">
   <!-- Header -->
-  <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+  <div class="d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center justify-content-between gap-3 mb-4 border-bottom border-secondary border-opacity-25 pb-3">
     <div>
       <span class="badge neon-border-blue text-white mono mb-2">WORK_ORDER_EDITOR.EXE</span>
       <h1 class="h2 m-0 neon-text-blue mono">ЗАКАЗ-НАРЯД №{{ order.id }}</h1>
     </div>
-    <div class="d-flex gap-2">
+    <div class="d-flex flex-wrap gap-2 justify-content-lg-end">
       {% if not order_paid_in_book %}
       <form action="{{ url_for('admin.work_order_pay', order_id=order.id) }}" method="POST" class="d-inline">
         {{ form.hidden_tag() }}
-        <button type="submit" class="btn btn-outline-success mono">
+        <button type="submit" class="btn btn-success mono fw-bold">
           <i class="bi bi-credit-card me-1"></i>ОПЛАТИТЬ.PAY
         </button>
       </form>
@@ -1185,6 +1185,37 @@
           </button>
         </div>
       </form>
+
+      <!-- Действие по оплате (всегда на виду, рядом с суммой) -->
+      <div class="card bg-dark neon-border-blue shadow-lg mb-4">
+        <div class="card-header border-secondary border-opacity-25 bg-transparent py-3">
+          <h5 class="card-title m-0 mono text-white small"><i class="bi bi-credit-card me-2"></i>ОПЛАТА</h5>
+        </div>
+        <div class="card-body p-4">
+          {% if not order_paid_in_book %}
+            <form action="{{ url_for('admin.work_order_pay', order_id=order.id) }}" method="POST" onsubmit="return confirm('Принять оплату на сумму {{ grand_total }} руб.? Будет создана проводка в книге.');">
+              {{ form.hidden_tag() }}
+              <button type="submit" class="btn btn-success w-100 py-3 mono fw-bold">
+                <i class="bi bi-credit-card me-2"></i>ОПЛАТИТЬ {{ grand_total }} РУБ.
+              </button>
+            </form>
+            <div class="text-secondary mono smaller mt-2">
+              > Оплата создаст приходную проводку в книге кассовых движений.
+            </div>
+          {% else %}
+            <div class="d-flex align-items-center justify-content-between mb-3">
+              <span class="badge bg-success mono"><i class="bi bi-check-circle me-1"></i>ОПЛАЧЕНО.PAID</span>
+              <span class="text-secondary mono smaller">сумма проведена</span>
+            </div>
+            <form action="{{ url_for('admin.work_order_unpay', order_id=order.id) }}" method="POST" onsubmit="return confirm('Отменить оплату? Будет создана обратная проводка в книге.');">
+              {{ form.hidden_tag() }}
+              <button type="submit" class="btn btn-outline-danger w-100 py-2 mono">
+                <i class="bi bi-arrow-counterclockwise me-2"></i>ОТМЕНИТЬ_ОПЛАТУ.UNPAY
+              </button>
+            </form>
+          {% endif %}
+        </div>
+      </div>
 
       {% if org_settings and org_settings.sbp_phone %}
       <div class="card bg-dark neon-border-blue shadow-lg mb-4">

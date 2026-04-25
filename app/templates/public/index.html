@@ -13,6 +13,7 @@
 {% endif %}
 
 {% block content %}
+<div class="public-home">
 <!-- Banner Gallery -->
 {% if banners %}
 <section class="banner-gallery position-relative">
@@ -89,8 +90,8 @@
 </section>
 {% endif %}
 
+<div class="public-home-stats container mt-n5 position-relative z-2">
 <!-- Stats Bar -->
-<div class="container mt-n5 position-relative z-2">
   <div class="row g-4 justify-content-center">
     <div class="col-md-3 col-6">
       <div class="feature-card text-center p-4">
@@ -281,6 +282,7 @@
 </section>
 {% endif %}
 
+</div>
 <style>
   .homepage-clean .feature-card {
     background: rgba(255, 255, 255, 0.04);
@@ -362,6 +364,138 @@
     .homepage-clean .feature-card {
       border-radius: 20px;
       padding: 1.5rem;
+    }
+  }
+  @media (max-width: 575.98px) {
+    .public-home .banner-image-container {
+      min-height: 520px;
+      height: calc(100svh - 72px);
+      max-height: 620px;
+    }
+    .public-home .banner-overlay {
+      background: linear-gradient(180deg, rgba(10, 11, 14, 0.22) 0%, rgba(10, 11, 14, 0.86) 48%, rgba(10, 11, 14, 0.96) 100%);
+    }
+    .public-home .carousel-caption {
+      left: 1rem;
+      right: 1rem;
+      bottom: 3.75rem;
+      transform: none;
+      max-width: none;
+      text-align: left;
+    }
+    .public-home .carousel-caption h1 {
+      font-size: clamp(2rem, 10vw, 3rem);
+      line-height: 1.02;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.85rem;
+      text-shadow: 0 0 14px rgba(0, 243, 255, 0.65);
+    }
+    .public-home .carousel-caption p {
+      display: block;
+      width: 100%;
+      font-size: 0.9rem;
+      line-height: 1.45;
+      letter-spacing: 0.08em;
+      margin-bottom: 1rem;
+      padding: 0.65rem 0.8rem;
+    }
+    .public-home .carousel-caption .badge {
+      max-width: 100%;
+      white-space: normal;
+      line-height: 1.35;
+    }
+    .public-home .carousel-caption .btn,
+    .public-home .hero-section .btn,
+    .public-home section .btn {
+      width: 100%;
+      min-height: 48px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.85rem 1rem !important;
+      letter-spacing: 0.04em;
+    }
+    .public-home .carousel-control-prev,
+    .public-home .carousel-control-next {
+      display: none;
+    }
+    .public-home .carousel-indicators {
+      margin-bottom: 1rem;
+    }
+    .public-home .hero-section {
+      padding: 72px 0 48px;
+    }
+    .public-home .hero-title {
+      font-size: clamp(2.15rem, 12vw, 3.15rem);
+      line-height: 1;
+      margin-bottom: 1rem;
+    }
+    .public-home .lead {
+      font-size: 1rem !important;
+      line-height: 1.55;
+      margin-bottom: 1.5rem !important;
+    }
+    .public-home .public-home-stats {
+      margin-top: 1rem !important;
+    }
+    .public-home .public-home-stats .row {
+      --bs-gutter-x: 0.75rem;
+      --bs-gutter-y: 0.75rem;
+    }
+    .public-home .public-home-stats .feature-card {
+      min-height: 108px;
+      padding: 1rem !important;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .public-home .public-home-stats h2 {
+      font-size: 1.75rem;
+      line-height: 1;
+    }
+    .public-home section {
+      padding-top: 2.5rem !important;
+      padding-bottom: 2.5rem !important;
+    }
+    .public-home .text-center.mb-5 {
+      margin-bottom: 1.75rem !important;
+    }
+    .public-home .section-title {
+      font-size: clamp(1.65rem, 8vw, 2.25rem);
+      line-height: 1.12;
+      margin-bottom: 0.75rem;
+      letter-spacing: 0.03em;
+    }
+    .public-home .feature-card {
+      padding: 1.15rem !important;
+      border-radius: 16px;
+    }
+    .public-home .icon-box {
+      width: 52px;
+      height: 52px;
+      font-size: 1.35rem;
+      margin-bottom: 1rem;
+    }
+    .public-home h3.h4,
+    .public-home h3.h5 {
+      font-size: 1.05rem;
+      line-height: 1.25;
+      letter-spacing: 0.04em;
+    }
+    .public-home .feature-card p,
+    .public-home .feature-card .small {
+      line-height: 1.5;
+    }
+    .public-home .feature-card.p-5 {
+      padding: 1.25rem !important;
+    }
+    .public-home .feature-card.p-5 h2 {
+      font-size: 1.45rem;
+      line-height: 1.2;
+      letter-spacing: 0.03em;
+    }
+    .public-home .feature-card.p-5 p {
+      line-height: 1.55;
     }
   }
 </style>
