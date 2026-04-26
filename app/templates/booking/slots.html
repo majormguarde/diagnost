@@ -49,6 +49,11 @@
               <input type="hidden" name="car_year" value="{{ car_year }}">
               <input type="hidden" name="car_number" value="{{ car_number }}">
               <input type="hidden" name="win_number" value="{{ win_number or '' }}">
+              <input type="hidden" name="engine_type" value="{{ engine_type or '' }}">
+              <input type="hidden" name="has_turbo" value="{{ has_turbo or '' }}">
+              <input type="hidden" name="engine_volume_l" value="{{ engine_volume_l if engine_volume_l is not none else '' }}">
+              <input type="hidden" name="transmission_type" value="{{ transmission_type or '' }}">
+              <input type="hidden" name="mileage_km" value="{{ mileage_km if mileage_km is not none else '' }}">
               <textarea name="problem_description" class="d-none">{{ problem_description }}</textarea>
 
               <div class="row g-4">

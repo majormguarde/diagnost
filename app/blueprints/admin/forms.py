@@ -73,6 +73,30 @@ class AppointmentForm(FlaskForm):
     car_year = IntegerField("Год выпуска", validators=[Optional()])
     car_number = StringField("Гос.номер", validators=[Optional()])
     win_number = StringField("WIN номер", validators=[Optional(), Length(max=32)])
+    engine_type = SelectField(
+        "Тип двигателя",
+        choices=[("", "—"), ("petrol", "Бензин"), ("diesel", "Дизель")],
+        validators=[Optional()],
+    )
+    has_turbo = SelectField(
+        "Турбина",
+        choices=[("", "—"), ("yes", "Да"), ("no", "Нет")],
+        validators=[Optional()],
+    )
+    engine_volume_l = FloatField("Объем двигателя (л)", validators=[Optional(), NumberRange(min=0.1, max=12.0)])
+    transmission_type = SelectField(
+        "Тип КПП",
+        choices=[
+            ("", "—"),
+            ("manual", "Механика"),
+            ("auto", "Автомат"),
+            ("robot", "Робот"),
+            ("cvt", "Вариатор"),
+            ("other", "Другое"),
+        ],
+        validators=[Optional()],
+    )
+    mileage_km = IntegerField("Пробег (км)", validators=[Optional(), NumberRange(min=0, max=3000000)])
     
     # Описание проблемы
     problem_description = TextAreaField("Описание неисправностей", validators=[Optional()])
@@ -146,6 +170,26 @@ class OrganizationSettingsForm(FlaskForm):
         ('6', 'Воскресенье')
     ], validators=[Optional()])
     submit = SubmitField("Сохранить настройки")
+
+
+class AiAssistantSettingsForm(FlaskForm):
+    """Настройки ИИ-помощника (админка)."""
+    ai_provider = SelectField(
+        "Провайдер",
+        choices=[
+            ("", "—"),
+            ("openrouter", "router.ai / OpenRouter (OpenAI-compatible)"),
+            ("openai", "OpenAI (OpenAI-compatible)"),
+            ("custom", "Custom OpenAI-compatible"),
+        ],
+        validators=[Optional()],
+    )
+    ai_base_url = StringField("Base URL", validators=[Optional(), Length(max=255)])
+    ai_api_key = PasswordField("API key", validators=[Optional(), Length(max=255)])
+    ai_model = StringField("Модель (id)", validators=[Optional(), Length(max=120)])
+    ai_site_url = StringField("Site URL (Referer)", validators=[Optional(), Length(max=255)])
+    ai_app_name = StringField("App name (X-Title)", validators=[Optional(), Length(max=120)])
+    submit = SubmitField("Сохранить")
 
 class BannerForm(FlaskForm):
     title = StringField("Заголовок", validators=[Optional()])

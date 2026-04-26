@@ -3,6 +3,7 @@ from collections import defaultdict
 from itertools import groupby
 from functools import wraps
 from datetime import date, datetime, time, timedelta
+import json
 import os
 import re
 import smtplib
@@ -14,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from werkzeug.utils import secure_filename
 
-from ...extensions import db
+from ...extensions import csrf, db
 from ...mail import MailConfigurationError, send_organization_email
 from ...telegram_bot import (
     build_zakaz_delivery_message,
@@ -30,6 +31,11 @@ from ...models import (
     WorkOrderComplaintItem, WorkOrderAdditionalWork, AppointmentItem, Competency, CashFlow, MasterCompetency, AppointmentIssueMedia,
     TelegramLink,
     TelegramLinkToken,
+    AppointmentDocument,
+    AiModel,
+    AiPromptTemplate,
+    AiRequestLog,
+    AppointmentAiQuestion,
 )
 from ...utils import (
     client_telegram_url,
@@ -50,11 +56,17 @@ from ...utils import (
     work_order_whatsapp_share_href,
     work_title_key,
 )
+from ...ai import AiError, openai_chat_completion
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen import canvas
 from .forms import (
     MasterForm, WorkForm, CategoryForm, AppointmentForm, WorkOrderForm,
     DocumentUploadForm, OrganizationSettingsForm, AdminCredentialsForm,
     BannerForm, ReviewForm, WorkOrderItemForm,
     AppointmentItemForm, CompetencyForm, ClientForm, ClientCreateForm, ContactSettingsForm,
+    AiAssistantSettingsForm,
     WorkOrderDetailForm, WorkOrderMaterialForm, WorkOrderAdditionalWorkForm,
 )
 
@@ -117,6 +129,327 @@ def admin_required(fn):
     return wrapper
 
 
+class _SafeFormatDict(dict):
+    def __missing__(self, key):
+        return "{" + str(key) + "}"
+
+
+def _render_prompt_md(template_md: str, ctx: dict) -> str:
+    t = str(template_md or "")
+    if not t.strip():
+        return ""
+    try:
+        return t.format_map(_SafeFormatDict(ctx or {}))
+    except Exception:
+        # If template contains braces not meant for formatting
+        return t
+
+
+_MUSTACHE_RE = re.compile(r"\{\{([A-Z0-9_]+)\}\}")
+_JSON_NUMERIC_KEYS = frozenset({"YEAR", "MILEAGE", "MILEAGE_KM"})
+
+
+def _render_prompt_mustache(template_md: str, ctx: dict) -> str:
+    """Replace {{KEY}} placeholders. YEAR/MILEAGE are numeric (no quotes -> number/null)."""
+    t = str(template_md or "")
+    if not t.strip():
+        return ""
+    ctx = ctx or {}
+
+    def repl(m):
+        key = m.group(1)
+        val = ctx.get(key, "")
+        if key in _JSON_NUMERIC_KEYS:
+            try:
+                if val is None:
+                    return "null"
+                s = str(val).strip()
+                if not s:
+                    return "null"
+                return str(int(float(s)))
+            except Exception:
+                return "null"
+        s = "" if val is None else str(val)
+        s = s.replace("\\", "\\\\").replace('"', '\\"')
+        return s
+
+    return _MUSTACHE_RE.sub(repl, t)
+
+
+def _extract_questions_json(answer_text: str) -> list[dict]:
+    """Try to extract JSON block with clarifying questions from AI answer."""
+    s = str(answer_text or "")
+    # prefer fenced json
+    m = re.search(r"```json\s*([\s\S]*?)\s*```", s, flags=re.IGNORECASE)
+    candidates = []
+    if m:
+        candidates.append(m.group(1))
+    # fallback: first {...} block
+    m2 = re.search(r"(\{[\s\S]{20,}\})", s)
+    if m2:
+        candidates.append(m2.group(1))
+    for raw in candidates:
+        try:
+            obj = json.loads(raw)
+        except Exception:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        rows = obj.get("clarifying_questions") or obj.get("questions") or obj.get("clarifying") or []
+        if not isinstance(rows, list):
+            continue
+        out = []
+        for r in rows[:20]:
+            if not isinstance(r, dict):
+                continue
+            q = str(r.get("q") or r.get("question") or "").strip()
+            opts = r.get("options") or r.get("answers") or []
+            if not q:
+                continue
+            if not isinstance(opts, list):
+                opts = []
+            opts2 = [str(x).strip() for x in opts if str(x or "").strip()][:10]
+            if not opts2:
+                # still allow saving the question with default options
+                opts2 = ["Да", "Нет", "Не знаю"]
+            out.append({"question": q, "options": opts2})
+        if out:
+            return out
+    return []
+
+
+def _appt_prompt_context(appointment: Appointment) -> dict:
+    car_make = (appointment.car_make or "").strip()
+    car_model = (appointment.car_model or "").strip()
+    car_year = str(appointment.car_year or "").strip()
+    win = (appointment.win_number or "").strip()
+    car_number = (appointment.car_number or "").strip()
+    issues_text = (appointment.problem_description or "").strip()
+    client_name = (appointment.client.name if appointment.client else "") or ""
+    master_name = (appointment.master.name if getattr(appointment, "master", None) else "") or ""
+    symptoms = appointment.problem_items()[:10]
+
+    engine_type = (appointment.engine_type or "").strip().lower()
+    has_turbo = appointment.has_turbo if appointment.has_turbo is not None else None
+    engine_volume_l = appointment.engine_volume_l if appointment.engine_volume_l is not None else None
+    transmission_type = (appointment.transmission_type or "").strip().lower()
+    mileage_km = appointment.mileage_km if appointment.mileage_km is not None else None
+
+    engine_type_label = "бензин" if engine_type == "petrol" else ("дизель" if engine_type == "diesel" else "")
+    turbo_label = "да" if has_turbo is True else ("нет" if has_turbo is False else "")
+    tr_map = {"manual": "механика", "auto": "автомат", "robot": "робот", "cvt": "вариатор", "other": "другое"}
+    tr_label = tr_map.get(transmission_type, transmission_type) if transmission_type else ""
+    engine_parts: list[str] = []
+    if engine_type_label:
+        engine_parts.append(engine_type_label)
+    if engine_volume_l:
+        try:
+            engine_parts.append(f"{float(engine_volume_l):.1f} л")
+        except (TypeError, ValueError):
+            pass
+    if turbo_label:
+        engine_parts.append(f"турбо: {turbo_label}")
+    engine_summary = " · ".join([p for p in engine_parts if p])
+    ctx = {
+        # legacy keys
+        "APPOINTMENT_ID": str(appointment.id),
+        "STATUS": (appointment.status or "").strip(),
+        "CLIENT_NAME": client_name,
+        "MASTER_NAME": master_name,
+        "CAR_MAKE": car_make,
+        "CAR_MODEL": car_model,
+        "CAR_YEAR": car_year,
+        "CAR_NUMBER": car_number,
+        "VIN": win,
+        "WIN": win,
+        "ISSUES": issues_text or "(не указано)",
+        "ENGINE_TYPE": engine_type,
+        "ENGINE_TYPE_LABEL": engine_type_label,
+        "HAS_TURBO": "yes" if has_turbo is True else "no" if has_turbo is False else "",
+        "TURBO": turbo_label,
+        "ENGINE_VOLUME_L": (str(engine_volume_l) if engine_volume_l is not None else ""),
+        "TRANSMISSION_TYPE": transmission_type,
+        "TRANSMISSION_LABEL": tr_label,
+        "MILEAGE_KM": mileage_km,
+        # json-block keys ({{...}})
+        "MARCA": car_make,
+        "MODEL": car_model,
+        "YEAR": car_year,
+        "ENGINE": engine_summary,
+        "TRANSMISSION": tr_label,
+        "MILEAGE": mileage_km,
+        "REGION": "RU",
+        "TIMING": "",
+        "PREV_CHECKS": "",
+        "WORK_1": "",
+        "LAMP_1": "",
+    }
+    for i in range(10):
+        ctx[f"SYMPTOM_{i+1}"] = symptoms[i] if i < len(symptoms) else ""
+    return ctx
+
+
+def _ctx_to_input_md(ctx: dict) -> str:
+    """Human-readable input data block for UI."""
+    if not isinstance(ctx, dict):
+        return ""
+    # stable order for UI
+    keys = [
+        "APPOINTMENT_ID",
+        "WORK_ORDER_ID",
+        "STATUS",
+        "CLIENT_NAME",
+        "MASTER_NAME",
+        "CAR_MAKE",
+        "CAR_MODEL",
+        "CAR_YEAR",
+        "CAR_NUMBER",
+        "VIN",
+        "ISSUES",
+        "TOTAL_AMOUNT",
+    ]
+    lines = []
+    for k in keys:
+        if k not in ctx:
+            continue
+        v = str(ctx.get(k) or "").strip()
+        if not v:
+            continue
+        lines.append(f"- {k}: {v}")
+    return "\n".join(lines).strip()
+
+
+def _wo_prompt_context(order: WorkOrder) -> dict:
+    appt = order.appointment
+    car_make = (appt.car_make or "").strip() if appt else ""
+    car_model = (appt.car_model or "").strip() if appt else ""
+    car_year = str(appt.car_year or "").strip() if appt and appt.car_year is not None else ""
+    win = (appt.win_number or "").strip() if appt else ""
+    car_number = (appt.car_number or "").strip() if appt else ""
+    client_name = (order.client.name if order.client else "") or ""
+    master_name = (order.master.name if order.master else "") or ""
+    issues = ""
+    if order.complaints:
+        issues = "\n".join(f"- {c.description}" for c in (order.complaints or []) if (c.description or "").strip())
+    elif appt:
+        issues = (appt.problem_description or "").strip()
+    symptoms: list[str] = []
+    if order.complaints:
+        for c in (order.complaints or []):
+            s = (getattr(c, "description", None) or "").strip()
+            if s:
+                symptoms.append(s)
+    elif appt:
+        symptoms = appt.problem_items()
+    symptoms = (symptoms or [])[:10]
+
+    engine_type = (appt.engine_type or "").strip().lower() if appt else ""
+    has_turbo = appt.has_turbo if appt and appt.has_turbo is not None else None
+    engine_volume_l = appt.engine_volume_l if appt and appt.engine_volume_l is not None else None
+    transmission_type = (appt.transmission_type or "").strip().lower() if appt else ""
+    mileage_km = appt.mileage_km if appt and appt.mileage_km is not None else None
+
+    engine_type_label = "бензин" if engine_type == "petrol" else ("дизель" if engine_type == "diesel" else "")
+    turbo_label = "да" if has_turbo is True else ("нет" if has_turbo is False else "")
+    tr_map = {"manual": "механика", "auto": "автомат", "robot": "робот", "cvt": "вариатор", "other": "другое"}
+    tr_label = tr_map.get(transmission_type, transmission_type) if transmission_type else ""
+    engine_parts: list[str] = []
+    if engine_type_label:
+        engine_parts.append(engine_type_label)
+    if engine_volume_l:
+        try:
+            engine_parts.append(f"{float(engine_volume_l):.1f} л")
+        except (TypeError, ValueError):
+            pass
+    if turbo_label:
+        engine_parts.append(f"турбо: {turbo_label}")
+    engine_summary = " · ".join([p for p in engine_parts if p])
+
+    ctx = {
+        "WORK_ORDER_ID": str(order.id),
+        "APPOINTMENT_ID": str(order.appointment_id or ""),
+        "STATUS": (order.status or "").strip(),
+        "CLIENT_NAME": client_name,
+        "MASTER_NAME": master_name,
+        "TOTAL_AMOUNT": str(int(order.total_amount or 0)),
+        "CAR_MAKE": car_make,
+        "CAR_MODEL": car_model,
+        "CAR_YEAR": car_year,
+        "CAR_NUMBER": car_number,
+        "VIN": win,
+        "WIN": win,
+        "ISSUES": issues.strip() or "(не указано)",
+        "ENGINE_TYPE": engine_type,
+        "ENGINE_TYPE_LABEL": engine_type_label,
+        "HAS_TURBO": "yes" if has_turbo is True else "no" if has_turbo is False else "",
+        "TURBO": turbo_label,
+        "ENGINE_VOLUME_L": (str(engine_volume_l) if engine_volume_l is not None else ""),
+        "TRANSMISSION_TYPE": transmission_type,
+        "TRANSMISSION_LABEL": tr_label,
+        "MILEAGE_KM": mileage_km,
+        "MARCA": car_make,
+        "MODEL": car_model,
+        "YEAR": car_year,
+        "ENGINE": engine_summary,
+        "TRANSMISSION": tr_label,
+        "MILEAGE": mileage_km,
+        "REGION": "RU",
+        "TIMING": "",
+        "PREV_CHECKS": "",
+        "WORK_1": "",
+        "LAMP_1": "",
+    }
+    for i in range(10):
+        ctx[f"SYMPTOM_{i+1}"] = symptoms[i] if i < len(symptoms) else ""
+    return ctx
+
+
+@bp.post("/ai-prompt-templates/create-json")
+@admin_required
+def ai_prompt_template_create_json():
+    payload = request.get_json(silent=True) or {}
+    title = str(payload.get("title") or "").strip()[:160]
+    body_md = str(payload.get("body_md") or "").strip()
+    if not title or not body_md:
+        return jsonify({"ok": False, "message": "Заполните название и текст."}), 400
+    row = AiPromptTemplate(title=title, body_md=body_md, is_active=True)
+    db.session.add(row)
+    db.session.commit()
+    rows = db.session.execute(
+        db.select(AiPromptTemplate)
+        .where(AiPromptTemplate.is_active.is_(True))
+        .order_by(AiPromptTemplate.title.asc())
+    ).scalars().all()
+    return jsonify(
+        {
+            "ok": True,
+            "templates": [{"id": int(r.id), "title": r.title, "body_md": r.body_md or ""} for r in rows],
+        }
+    )
+
+
+@bp.post("/ai-default-template-json")
+@admin_required
+def ai_default_template_json():
+    payload = request.get_json(silent=True) or {}
+    kind = str(payload.get("kind") or "").strip().lower()
+    tpl_id = payload.get("template_id")
+    try:
+        tpl_id_int = int(tpl_id) if tpl_id is not None and str(tpl_id).strip() else None
+    except ValueError:
+        tpl_id_int = None
+
+    settings_obj = OrganizationSettings.get_settings()
+    if kind == "appointment":
+        settings_obj.ai_default_prompt_template_id_appt = tpl_id_int
+    elif kind == "work_order":
+        settings_obj.ai_default_prompt_template_id_wo = tpl_id_int
+    else:
+        return jsonify({"ok": False, "message": "kind"}), 400
+    db.session.commit()
+    return jsonify({"ok": True, "template_id": tpl_id_int})
+
+
 def _parse_work_hours_range(work_hours: str | None) -> tuple[time, time] | None:
     if not work_hours:
         return None
@@ -148,8 +481,14 @@ def _shift_calendar_month(year: int, month: int, delta: int) -> tuple[int, int]:
     return y, m
 
 
-def _work_order_calendar_weeks(year: int, month: int, counts_by_day: dict[int, int], today: date) -> list[list[dict]]:
-    """Сетка календаря (пн–вс): день месяца и число открытых нарядов, созданных в этот день."""
+def _work_order_calendar_weeks(
+    year: int,
+    month: int,
+    wo_counts_by_day: dict[int, int],
+    appt_counts_by_day: dict[int, int],
+    today: date,
+) -> list[list[dict]]:
+    """Сетка календаря (пн–вс): наряды opened + заявки (все статусы) по дате создания."""
     first_wd, n_days = pycalendar.monthrange(year, month)
     cells: list[int | None] = [None] * first_wd + list(range(1, n_days + 1))
     while len(cells) % 7 != 0:
@@ -159,16 +498,27 @@ def _work_order_calendar_weeks(year: int, month: int, counts_by_day: dict[int, i
         row = []
         for d in cells[i : i + 7]:
             if d is None:
-                row.append({"day": None, "count": 0, "is_today": False, "in_month": False})
+                row.append(
+                    {
+                        "day": None,
+                        "wo_count": 0,
+                        "appt_count": 0,
+                        "is_today": False,
+                        "in_month": False,
+                        "has_activity": False,
+                    }
+                )
             else:
-                cnt = int(counts_by_day.get(d, 0))
+                wo_cnt = int(wo_counts_by_day.get(d, 0))
+                ap_cnt = int(appt_counts_by_day.get(d, 0))
                 row.append(
                     {
                         "day": d,
-                        "count": cnt,
+                        "wo_count": wo_cnt,
+                        "appt_count": ap_cnt,
                         "is_today": bool(today.year == year and today.month == month and today.day == d),
                         "in_month": True,
-                        "has_activity": cnt > 0,
+                        "has_activity": (wo_cnt > 0) or (ap_cnt > 0),
                     }
                 )
         weeks.append(row)
@@ -292,7 +642,17 @@ def index():
         if cdt and cdt.year == wo_cal_year and cdt.month == wo_cal_month:
             counts_by_day[cdt.day] += 1
 
-    wo_cal_weeks = _work_order_calendar_weeks(wo_cal_year, wo_cal_month, counts_by_day, today_d)
+    appt_counts_by_day: dict[int, int] = defaultdict(int)
+    month_appts = db.session.execute(
+        db.select(Appointment.created_at)
+        .where(Appointment.created_at >= datetime(wo_cal_year, wo_cal_month, 1))
+        .where(Appointment.created_at <= datetime.combine(date(wo_cal_year, wo_cal_month, pycalendar.monthrange(wo_cal_year, wo_cal_month)[1]), time.max))
+    ).scalars().all()
+    for cdt in month_appts:
+        if cdt and cdt.year == wo_cal_year and cdt.month == wo_cal_month:
+            appt_counts_by_day[int(cdt.day)] += 1
+
+    wo_cal_weeks = _work_order_calendar_weeks(wo_cal_year, wo_cal_month, counts_by_day, appt_counts_by_day, today_d)
     month_names = (
         "",
         "Январь",
@@ -330,6 +690,63 @@ def index():
         opened_orders=opened_orders,
         opened_count=opened_count,
         opened_total_amount=opened_total_amount,
+    )
+
+
+@bp.get("/dashboard/day-details")
+@admin_required
+def dashboard_day_details():
+    """HTML-фрагмент для модалки: заявки и заказ-наряды за выбранный день."""
+    s = (request.args.get("date") or "").strip()
+    try:
+        day = datetime.strptime(s, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        abort(400)
+
+    day_start = datetime.combine(day, time.min)
+    day_end = datetime.combine(day, time.max)
+
+    appointments = (
+        db.session.execute(
+            db.select(Appointment)
+            .where(Appointment.created_at >= day_start)
+            .where(Appointment.created_at <= day_end)
+            .order_by(Appointment.created_at.asc())
+            .options(
+                selectinload(Appointment.slots).selectinload(AppointmentSlot.slot),
+                selectinload(Appointment.client),
+                selectinload(Appointment.master),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    # В модалке сортируем по времени визита (слоты), но фильтр остаётся по created_at.
+    def _visit_sort_key(a: Appointment) -> tuple[datetime, int]:
+        slot_starts = [x.slot.start_at for x in (a.slots or []) if getattr(x, "slot", None) and x.slot.start_at]
+        slot_starts.sort()
+        visit_dt = slot_starts[0] if slot_starts else (a.start_at or a.created_at or day_start)
+        return (visit_dt, int(a.id or 0))
+
+    appointments.sort(key=_visit_sort_key)
+
+    work_orders = (
+        db.session.execute(
+            db.select(WorkOrder)
+            .where(WorkOrder.created_at >= day_start)
+            .where(WorkOrder.created_at <= day_end)
+            .order_by(WorkOrder.created_at.asc())
+            .options(selectinload(WorkOrder.client), selectinload(WorkOrder.master))
+        )
+        .scalars()
+        .all()
+    )
+
+    return render_template(
+        "admin/_dashboard_day_details.html",
+        day=day,
+        appointments=appointments,
+        work_orders=work_orders,
     )
 
 # --- Клиенты ---
@@ -1112,6 +1529,15 @@ def appointment_detail(appointment_id):
         
     form = AppointmentForm(obj=appointment)
     item_form = AppointmentItemForm()
+
+    # WTForms SelectField doesn't auto-map bool<->string choices
+    if request.method == "GET":
+        if appointment.has_turbo is True:
+            form.has_turbo.data = "yes"
+        elif appointment.has_turbo is False:
+            form.has_turbo.data = "no"
+        else:
+            form.has_turbo.data = ""
     
     # Загружаем список мастеров
     masters = db.session.execute(db.select(Master).where(Master.is_active == True)).scalars().all()
@@ -1146,6 +1572,18 @@ def appointment_detail(appointment_id):
 
     if form.validate_on_submit():
         appointment.master_id = form.master_id.data
+        appointment.status = form.status.data
+        appointment.car_make = (form.car_make.data or "").strip() or None
+        appointment.car_model = (form.car_model.data or "").strip() or None
+        appointment.car_year = form.car_year.data
+        appointment.car_number = (form.car_number.data or "").strip() or None
+        appointment.win_number = normalize_win_number(form.win_number.data) or None
+        appointment.engine_type = (form.engine_type.data or "").strip() or None
+        ht = (form.has_turbo.data or "").strip().lower()
+        appointment.has_turbo = True if ht == "yes" else False if ht == "no" else None
+        appointment.engine_volume_l = form.engine_volume_l.data
+        appointment.transmission_type = (form.transmission_type.data or "").strip() or None
+        appointment.mileage_km = form.mileage_km.data
         raw_ids = (request.form.get("time_slot_ids") or "").replace(",", " ").split()
         slot_ids: list[int] = []
         seen: set[int] = set()
@@ -1203,6 +1641,17 @@ def appointment_detail(appointment_id):
         appointment.car_year = form.car_year.data
         appointment.car_number = form.car_number.data
         appointment.win_number = normalize_win_number(form.win_number.data) or None
+        appointment.engine_type = (form.engine_type.data or "").strip() or None
+        ht = (form.has_turbo.data or "").strip().lower()
+        if ht == "yes":
+            appointment.has_turbo = True
+        elif ht == "no":
+            appointment.has_turbo = False
+        else:
+            appointment.has_turbo = None
+        appointment.engine_volume_l = form.engine_volume_l.data
+        appointment.transmission_type = (form.transmission_type.data or "").strip() or None
+        appointment.mileage_km = form.mileage_km.data
         appointment.problem_description = form.problem_description.data
 
         # Если статус заявки изменен на "confirmed" и заказ-наряд еще не создан, создаем его
@@ -1246,6 +1695,41 @@ def appointment_detail(appointment_id):
     issue_media_slots, issue_media_hash_val = _admin_issue_media_bundle(appointment)
 
     cl = appointment.client
+    prompt_templates = db.session.execute(
+        db.select(AiPromptTemplate)
+        .where(AiPromptTemplate.is_active.is_(True))
+        .order_by(AiPromptTemplate.title.asc())
+    ).scalars().all()
+    prompt_templates_json = [
+        {
+            "id": int(t.id),
+            "title": t.title,
+            "body_md": t.body_md or "",
+            "is_active": 1 if t.is_active else 0,
+        }
+        for t in prompt_templates
+    ]
+    ai_questions_rows = db.session.execute(
+        db.select(AppointmentAiQuestion)
+        .where(AppointmentAiQuestion.appointment_id == appointment.id)
+        .order_by(AppointmentAiQuestion.id.asc())
+    ).scalars().all()
+    ai_questions = []
+    for q in ai_questions_rows:
+        try:
+            opts = json.loads(q.options_json or "[]")
+        except Exception:
+            opts = []
+        if not isinstance(opts, list):
+            opts = []
+        ai_questions.append(
+            {
+                "id": int(q.id),
+                "question": q.question,
+                "options": [str(x) for x in opts if str(x or "").strip()],
+                "client_answer": q.client_answer or "",
+            }
+        )
     return render_template(
         "admin/appointments/detail.html",
         appointment=appointment,
@@ -1262,6 +1746,9 @@ def appointment_detail(appointment_id):
         client_wa_url=client_whatsapp_url(cl) if cl else None,
         client_tg_url=client_telegram_url(cl) if cl else None,
         client_user=cl,
+        prompt_templates=prompt_templates,
+        prompt_templates_json=prompt_templates_json,
+        ai_questions=ai_questions,
     )
 
 
@@ -1588,6 +2075,195 @@ def appointment_problem_description_json(appointment_id: int):
             "problem_hash": problem_description_hash(appointment.problem_description),
         }
     )
+
+
+@bp.get("/appointments/<int:appointment_id>/snapshot-json")
+@admin_required
+def appointment_snapshot_json(appointment_id: int):
+    appointment = db.session.get(Appointment, appointment_id)
+    if not appointment:
+        return jsonify({"ok": False, "message": "Заявка не найдена."}), 404
+    return jsonify(
+        {
+            "ok": True,
+            "car_make": appointment.car_make or "",
+            "car_model": appointment.car_model or "",
+            "car_year": int(appointment.car_year) if appointment.car_year is not None else None,
+            "car_number": appointment.car_number or "",
+            "win_number": appointment.win_number or "",
+            "engine_type": appointment.engine_type or "",
+            "has_turbo": bool(appointment.has_turbo) if appointment.has_turbo is not None else None,
+            "engine_volume_l": float(appointment.engine_volume_l) if appointment.engine_volume_l is not None else None,
+            "transmission_type": appointment.transmission_type or "",
+            "mileage_km": int(appointment.mileage_km) if appointment.mileage_km is not None else None,
+        }
+    )
+
+
+@bp.post("/appointments/<int:appointment_id>/ai-analyze-json")
+@admin_required
+@csrf.exempt
+def appointment_ai_analyze_json(appointment_id: int):
+    """ИИ-анализ заявки (админка): строим промпт из данных заявки и получаем ответ."""
+    try:
+        appointment = db.session.execute(
+            db.select(Appointment)
+            .where(Appointment.id == appointment_id)
+            .options(selectinload(Appointment.client), selectinload(Appointment.master))
+        ).scalar_one_or_none()
+        if not appointment:
+            return jsonify({"ok": False, "message": "Заявка не найдена."}), 404
+
+        payload = request.get_json(silent=True) or {}
+        mode = str(payload.get("mode") or "prompt").strip().lower()
+        custom_prompt = str(payload.get("prompt") or "").strip()
+        template_id = payload.get("template_id", None)
+        messages_in = payload.get("messages", None)
+
+        car_make = (appointment.car_make or "").strip()
+        car_model = (appointment.car_model or "").strip()
+        car_year = str(appointment.car_year or "").strip()
+        win = (appointment.win_number or "").strip()
+        car_number = (appointment.car_number or "").strip()
+        issues_text = (appointment.problem_description or "").strip()
+        client_name = (appointment.client.name if appointment.client else "") or ""
+
+        base_prompt = (
+            "Роль: автоэлектрик-диагност.\n"
+            "Задача: гипотезы причин, вопросы для уточнения, план диагностики, риски. "
+            "Не делай выводов без проверок.\n\n"
+            f"Клиент: {client_name}\n"
+            f"Авто: {car_make} {car_model} {car_year}\n"
+            f"Госномер: {car_number}\n"
+            f"VIN/WIN: {win}\n"
+            f"Статус: {appointment.status}\n\n"
+            "Неисправности:\n"
+            f"{issues_text or '(не указано)'}\n\n"
+            "Ответ:\n"
+            "1) Резюме\n"
+            "2) Гипотезы (топ-5)\n"
+            "3) Вопросы\n"
+            "4) План диагностики\n"
+            "5) Риски\n"
+            "\n\n"
+            "Дополнительно: верни в конце JSON-блок в формате:\n"
+            "```json\n"
+            "{\n"
+            "  \"clarifying_questions\": [\n"
+            "    {\"q\": \"...\", \"options\": [\"...\", \"...\", \"...\"]}\n"
+            "  ]\n"
+            "}\n"
+            "```\n"
+        )
+
+        settings_obj = OrganizationSettings.get_settings()
+        tpl_row = None
+        tpl_used_id = None
+        try:
+            if template_id is not None and str(template_id).strip():
+                tpl_used_id = int(template_id)
+            else:
+                tpl_used_id = int(settings_obj.ai_default_prompt_template_id_appt or 0) or None
+        except ValueError:
+            tpl_used_id = None
+        if tpl_used_id:
+            tpl_row = db.session.get(AiPromptTemplate, tpl_used_id)
+        ctx = _appt_prompt_context(appointment)
+        # include client answers (if any) for follow-up prompts
+        answered = db.session.execute(
+            db.select(AppointmentAiQuestion)
+            .where(
+                AppointmentAiQuestion.appointment_id == appointment.id,
+                AppointmentAiQuestion.client_answer.is_not(None),
+            )
+            .order_by(AppointmentAiQuestion.id.asc())
+        ).scalars().all()
+        if answered:
+            ctx["CLIENT_QA"] = "\n".join(
+                f"- {q.question.strip()}: {str(q.client_answer or '').strip()}"
+                for q in answered
+                if (q.question or "").strip() and (q.client_answer or "").strip()
+            )
+        else:
+            ctx["CLIENT_QA"] = ""
+        prompt = custom_prompt or (_render_prompt_mustache(tpl_row.body_md, ctx) if tpl_row else base_prompt)
+        if mode == "prompt":
+            return jsonify({"ok": True, "prompt": prompt})
+
+        api_key = ((settings_obj.ai_api_key or "") or (current_app.config.get("OPENAI_API_KEY") or "")).strip()
+        model = ((settings_obj.ai_model or "") or (current_app.config.get("OPENAI_MODEL") or "")).strip()
+        base_url = ((settings_obj.ai_base_url or "") or (current_app.config.get("OPENAI_BASE_URL") or "")).strip()
+        if not api_key:
+            return jsonify({"ok": False, "message": "AI отключён: задайте OPENAI_API_KEY в окружении сервера."})
+
+        try:
+            extra_headers = {}
+            if (settings_obj.ai_site_url or "").strip():
+                extra_headers["HTTP-Referer"] = settings_obj.ai_site_url
+            if (settings_obj.ai_app_name or "").strip():
+                extra_headers["X-Title"] = settings_obj.ai_app_name
+            if isinstance(messages_in, list) and messages_in:
+                messages = []
+                for m in messages_in:
+                    if not isinstance(m, dict):
+                        continue
+                    role = str(m.get("role") or "").strip()
+                    content = str(m.get("content") or "")
+                    if role not in ("user", "assistant", "system"):
+                        continue
+                    if not content.strip():
+                        continue
+                    messages.append({"role": role, "content": content})
+                if not messages or messages[0]["role"] != "system":
+                    messages = [{"role": "system", "content": prompt}] + messages
+            else:
+                messages = [
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": "Дай ответ по структуре."},
+                ]
+
+            answer = openai_chat_completion(
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                messages=messages,
+                temperature=0.2,
+                timeout_s=60,
+                extra_headers=extra_headers,
+            )
+        except AiError as e:
+            return jsonify({"ok": False, "message": str(e)})
+
+        try:
+            log = AiRequestLog(
+                appointment_id=int(appointment.id),
+                template_id=int(tpl_used_id) if tpl_used_id else None,
+                model=model,
+                prompt_md=prompt,
+                messages_json=json.dumps(messages, ensure_ascii=False),
+                answer_text=answer,
+            )
+            db.session.add(log)
+            db.session.commit()
+            qrows = _extract_questions_json(answer)
+            if qrows:
+                for qr in qrows[:20]:
+                    db.session.add(
+                        AppointmentAiQuestion(
+                            appointment_id=int(appointment.id),
+                            ai_request_log_id=int(log.id),
+                            question=str(qr.get("question") or "").strip(),
+                            options_json=json.dumps(qr.get("options") or [], ensure_ascii=False),
+                        )
+                    )
+                db.session.commit()
+        except Exception:
+            current_app.logger.exception("AI request log failed")
+
+        return jsonify({"ok": True, "prompt": prompt, "answer": answer, "model": model, "template_id": tpl_used_id})
+    except Exception as e:
+        current_app.logger.exception("AI appointment endpoint failed")
+        return jsonify({"ok": False, "message": f"{type(e).__name__}: {e}"}), 500
 
 
 @bp.post("/appointments/<int:appointment_id>/items/add")
@@ -2049,6 +2725,20 @@ def work_order_detail(order_id):
         return redirect(url_for("admin.work_order_detail", order_id=order.id))
         
     order_paid_in_book = work_order_has_positive_cashflow(order.id)
+    prompt_templates = db.session.execute(
+        db.select(AiPromptTemplate)
+        .where(AiPromptTemplate.is_active.is_(True))
+        .order_by(AiPromptTemplate.title.asc())
+    ).scalars().all()
+    prompt_templates_json = [
+        {
+            "id": int(t.id),
+            "title": t.title,
+            "body_md": t.body_md or "",
+            "is_active": 1 if t.is_active else 0,
+        }
+        for t in prompt_templates
+    ]
     return render_template(
         "admin/work_orders/detail.html",
         order=order,
@@ -2064,6 +2754,8 @@ def work_order_detail(order_id):
         merged_inventory_rows=merged_inventory_rows,
         selected_materials_list=selected_materials_list,
         complaints=order.complaints or [],
+        prompt_templates=prompt_templates,
+        prompt_templates_json=prompt_templates_json,
     )
 
 @bp.post("/work-orders/<int:order_id>/pay")
@@ -2172,6 +2864,435 @@ def work_order_sbp_qr(order_id: int):
     img.save(buf, format="PNG")
     buf.seek(0)
     return send_file(buf, mimetype="image/png", download_name=f"work-order-{order.id}-sbp.png", max_age=0)
+
+
+@bp.post("/work-orders/<int:order_id>/ai-analyze-json")
+@admin_required
+@csrf.exempt
+def work_order_ai_analyze_json(order_id: int):
+    """ИИ-анализ заказ-наряда (админка): промпт из жалоб/данных заказа."""
+    try:
+        order = db.session.execute(
+            db.select(WorkOrder)
+            .where(WorkOrder.id == order_id)
+            .options(
+                selectinload(WorkOrder.client),
+                selectinload(WorkOrder.master),
+                selectinload(WorkOrder.appointment),
+                selectinload(WorkOrder.complaints),
+                selectinload(WorkOrder.items),
+            )
+        ).scalar_one_or_none()
+        if not order:
+            abort(404)
+
+        payload = request.get_json(silent=True) or {}
+        mode = str(payload.get("mode") or "prompt").strip().lower()
+        custom_prompt = str(payload.get("prompt") or "").strip()
+        template_id = payload.get("template_id", None)
+        messages_in = payload.get("messages", None)
+
+        client_name = (order.client.name if order.client else "") or ""
+        client_phone = (order.client.phone if order.client else "") or ""
+        master_name = (order.master.name if order.master else "") or ""
+        appt = order.appointment
+        car_make = ((appt.car_make if appt else "") or "").strip()
+        car_model = ((appt.car_model if appt else "") or "").strip()
+        car_year = str(((appt.car_year if appt else "") or "")).strip()
+        win = ((appt.win_number if appt else "") or "").strip()
+        car_number = ((appt.car_number if appt else "") or "").strip()
+
+        complaints_lines = []
+        for c in (order.complaints or []):
+            if not c:
+                continue
+            line = (c.description or "").strip()
+            if not line:
+                continue
+            if c.is_refused and c.refusal_reason:
+                line += f" (отказ: {c.refusal_reason})"
+            complaints_lines.append(line)
+
+        works_lines = []
+        for it in (order.items or []):
+            if not it:
+                continue
+            title = (it.title or "").strip()
+            if not title:
+                continue
+            price = int(it.price or 0)
+            done = "✓" if getattr(it, "is_done", False) else "·"
+            works_lines.append(f"{done} {title} — {price} руб.")
+
+        recalculate_work_order_total(order)
+        db.session.commit()
+
+        base_prompt = (
+            "Роль: автоэлектрик-диагност.\n"
+            "Задача: гипотезы причин, вопросы для уточнения, план диагностики, рекомендации, риски.\n\n"
+            f"Заказ-наряд: №{order.id}\n"
+            f"Статус: {order.status}\n"
+            f"Клиент: {client_name} ({client_phone})\n"
+            f"Мастер: {master_name}\n"
+            f"Авто: {car_make} {car_model} {car_year}\n"
+            f"Госномер: {car_number}\n"
+            f"VIN/WIN: {win}\n"
+            f"Сумма: {int(order.total_amount or 0)} руб.\n\n"
+            "Жалобы:\n"
+            + ("\n".join([f"- {x}" for x in complaints_lines]) if complaints_lines else "(нет жалоб)\n")
+            + "\n\nРаботы/позиции:\n"
+            + ("\n".join([f"- {x}" for x in works_lines[:25]]) if works_lines else "(позиций нет)\n")
+            + "\n\nОтвет:\n"
+            "1) Резюме\n"
+            "2) Гипотезы (топ-5)\n"
+            "3) Вопросы\n"
+            "4) План диагностики\n"
+            "5) Рекомендации\n"
+            "6) Риски\n"
+            "\n\n"
+            "Дополнительно: верни в конце JSON-блок в формате:\n"
+            "```json\n"
+            "{\n"
+            "  \"clarifying_questions\": [\n"
+            "    {\"q\": \"...\", \"options\": [\"...\", \"...\", \"...\"]}\n"
+            "  ]\n"
+            "}\n"
+            "```\n"
+        )
+
+        settings_obj = OrganizationSettings.get_settings()
+        tpl_row = None
+        tpl_used_id = None
+        try:
+            if template_id is not None and str(template_id).strip():
+                tpl_used_id = int(template_id)
+            else:
+                tpl_used_id = int(settings_obj.ai_default_prompt_template_id_wo or 0) or None
+        except ValueError:
+            tpl_used_id = None
+        if tpl_used_id:
+            tpl_row = db.session.get(AiPromptTemplate, tpl_used_id)
+        ctx = _wo_prompt_context(order)
+        appt_id = int(order.appointment_id) if order.appointment_id else None
+        if appt_id:
+            answered = db.session.execute(
+                db.select(AppointmentAiQuestion)
+                .where(
+                    AppointmentAiQuestion.appointment_id == appt_id,
+                    AppointmentAiQuestion.client_answer.is_not(None),
+                )
+                .order_by(AppointmentAiQuestion.id.asc())
+            ).scalars().all()
+            if answered:
+                ctx["CLIENT_QA"] = "\n".join(
+                    f"- {q.question.strip()}: {str(q.client_answer or '').strip()}"
+                    for q in answered
+                    if (q.question or "").strip() and (q.client_answer or "").strip()
+                )
+            else:
+                ctx["CLIENT_QA"] = ""
+        else:
+            ctx["CLIENT_QA"] = ""
+        prompt = custom_prompt or (_render_prompt_mustache(tpl_row.body_md, ctx) if tpl_row else base_prompt)
+        if mode == "prompt":
+            return jsonify({"ok": True, "prompt": prompt})
+
+        api_key = ((settings_obj.ai_api_key or "") or (current_app.config.get("OPENAI_API_KEY") or "")).strip()
+        model = ((settings_obj.ai_model or "") or (current_app.config.get("OPENAI_MODEL") or "")).strip()
+        base_url = ((settings_obj.ai_base_url or "") or (current_app.config.get("OPENAI_BASE_URL") or "")).strip()
+        if not api_key:
+            return jsonify({"ok": False, "message": "AI отключён: задайте OPENAI_API_KEY в окружении сервера."})
+
+        try:
+            extra_headers = {}
+            if (settings_obj.ai_site_url or "").strip():
+                extra_headers["HTTP-Referer"] = settings_obj.ai_site_url
+            if (settings_obj.ai_app_name or "").strip():
+                extra_headers["X-Title"] = settings_obj.ai_app_name
+            if isinstance(messages_in, list) and messages_in:
+                messages = []
+                for m in messages_in:
+                    if not isinstance(m, dict):
+                        continue
+                    role = str(m.get("role") or "").strip()
+                    content = str(m.get("content") or "")
+                    if role not in ("user", "assistant", "system"):
+                        continue
+                    if not content.strip():
+                        continue
+                    messages.append({"role": role, "content": content})
+                if not messages or messages[0]["role"] != "system":
+                    messages = [{"role": "system", "content": prompt}] + messages
+            else:
+                messages = [
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": "Дай ответ по структуре."},
+                ]
+
+            answer = openai_chat_completion(
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                messages=messages,
+                temperature=0.2,
+                timeout_s=60,
+                extra_headers=extra_headers,
+            )
+        except AiError as e:
+            return jsonify({"ok": False, "message": str(e)})
+
+        try:
+            log = AiRequestLog(
+                work_order_id=int(order.id),
+                appointment_id=int(order.appointment_id) if order.appointment_id else None,
+                template_id=int(tpl_used_id) if tpl_used_id else None,
+                model=model,
+                prompt_md=prompt,
+                messages_json=json.dumps(messages, ensure_ascii=False),
+                answer_text=answer,
+            )
+            db.session.add(log)
+            db.session.commit()
+            appt_id = int(order.appointment_id) if order.appointment_id else None
+            if appt_id:
+                qrows = _extract_questions_json(answer)
+                if qrows:
+                    for qr in qrows[:20]:
+                        db.session.add(
+                            AppointmentAiQuestion(
+                                appointment_id=appt_id,
+                                ai_request_log_id=int(log.id),
+                                question=str(qr.get("question") or "").strip(),
+                                options_json=json.dumps(qr.get("options") or [], ensure_ascii=False),
+                            )
+                        )
+                    db.session.commit()
+        except Exception:
+            current_app.logger.exception("AI request log failed")
+
+        return jsonify({"ok": True, "prompt": prompt, "answer": answer, "model": model, "template_id": tpl_used_id})
+    except Exception as e:
+        current_app.logger.exception("AI work order endpoint failed")
+        return jsonify({"ok": False, "message": f"{type(e).__name__}: {e}"}), 500
+
+
+def _pdf_safe_text(s: str) -> str:
+    return str(s or "").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _ensure_pdf_font_registered() -> str:
+    """Register a Unicode TTF if available, otherwise fallback to built-in."""
+    # Windows-friendly: try DejaVuSans if exists in common locations, else Helvetica.
+    candidates = [
+        os.path.join(os.environ.get("WINDIR", "C:\\Windows"), "Fonts", "DejaVuSans.ttf"),
+        os.path.join(os.environ.get("WINDIR", "C:\\Windows"), "Fonts", "arial.ttf"),
+    ]
+    for p in candidates:
+        if p and os.path.exists(p):
+            name = "DiagFont"
+            try:
+                pdfmetrics.registerFont(TTFont(name, p))
+                return name
+            except Exception:
+                continue
+    return "Helvetica"
+
+
+def _render_pdf_lines(c: canvas.Canvas, *, title: str, lines: list[str]) -> None:
+    font_name = _ensure_pdf_font_registered()
+    width, height = A4
+    margin = 48
+    y = height - margin
+    c.setFont(font_name, 14)
+    c.drawString(margin, y, title[:120])
+    y -= 24
+    c.setFont(font_name, 10)
+
+    for raw in lines:
+        txt = _pdf_safe_text(raw)
+        for part in txt.split("\n"):
+            if y < margin:
+                c.showPage()
+                width, height = A4
+                y = height - margin
+                c.setFont(font_name, 10)
+            c.drawString(margin, y, part[:180])
+            y -= 14
+
+
+@bp.post("/work-orders/<int:order_id>/ai-chat/save-pdf-json")
+@admin_required
+@csrf.exempt
+def work_order_ai_chat_save_pdf_json(order_id: int):
+    """Сохранить чат ИИ в PDF и прикрепить к заказ-наряду."""
+    order = db.session.get(WorkOrder, order_id)
+    if not order:
+        abort(404)
+
+    payload = request.get_json(silent=True) or {}
+    messages = payload.get("messages") or []
+    if not isinstance(messages, list) or not messages:
+        return jsonify({"ok": False, "message": "Нет сообщений для сохранения."}), 400
+
+    # Prepare text
+    lines = []
+    for m in messages:
+        if not isinstance(m, dict):
+            continue
+        role = str(m.get("role") or "").strip()
+        content = str(m.get("content") or "")
+        if not content.strip():
+            continue
+        who = "СИСТЕМА" if role == "system" else ("ПОЛЬЗОВАТЕЛЬ" if role == "user" else "ИИ")
+        lines.append(f"{who}:")
+        lines.append(content.strip())
+        lines.append("")
+
+    if not lines:
+        return jsonify({"ok": False, "message": "Сообщения пустые."}), 400
+
+    # Save PDF file into documents/<order_id>/
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"AI_CHAT_WORK_ORDER_{order.id}_{ts}.pdf"
+    order_dir = os.path.join(current_app.config["DOCUMENTS_DIR"], str(order.id))
+    os.makedirs(order_dir, exist_ok=True)
+    file_path = os.path.join(order_dir, filename)
+
+    try:
+        c = canvas.Canvas(file_path, pagesize=A4)
+        _render_pdf_lines(c, title=f"ИИ-чат · Заказ-наряд №{order.id}", lines=lines)
+        c.save()
+        size_bytes = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+    except Exception as e:
+        current_app.logger.exception("PDF generation failed")
+        return jsonify({"ok": False, "message": f"PDF error: {e}"}), 500
+
+    doc = WorkOrderDocument(
+        work_order=order,
+        filename=filename,
+        mime="application/pdf",
+        storage_path=os.path.relpath(file_path, current_app.config["DOCUMENTS_DIR"]).replace(os.path.sep, "/"),
+        size_bytes=int(size_bytes or 0),
+    )
+    db.session.add(doc)
+    db.session.commit()
+    return jsonify(
+        {
+            "ok": True,
+            "doc_id": doc.id,
+            "filename": doc.filename,
+            "storage_path": doc.storage_path,
+            "download_url": url_for("admin.get_document", filename=doc.storage_path),
+        }
+    )
+
+
+def _ai_chat_messages_to_md(messages: list) -> str:
+    parts: list[str] = []
+    for m in messages or []:
+        if not isinstance(m, dict):
+            continue
+        role = str(m.get("role") or "").strip() or "assistant"
+        content = str(m.get("content") or "")
+        if not content.strip():
+            continue
+        who = "Система" if role == "system" else ("Пользователь" if role == "user" else "ИИ")
+        parts.append(f"## {who}\n\n{content.strip()}\n")
+    return "\n".join(parts).strip() + "\n"
+
+
+@bp.post("/work-orders/<int:order_id>/ai-chat/save-md-json")
+@admin_required
+def work_order_ai_chat_save_md_json(order_id: int):
+    """Сохранить чат ИИ в Markdown и прикрепить к заказ-наряду."""
+    order = db.session.get(WorkOrder, order_id)
+    if not order:
+        abort(404)
+
+    payload = request.get_json(silent=True) or {}
+    messages = payload.get("messages") or []
+    if not isinstance(messages, list) or not messages:
+        return jsonify({"ok": False, "message": "Нет сообщений для сохранения."}), 400
+
+    md = _ai_chat_messages_to_md(messages)
+    if not md.strip():
+        return jsonify({"ok": False, "message": "Сообщения пустые."}), 400
+
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"AI_CHAT_WORK_ORDER_{order.id}_{ts}.md"
+    order_dir = os.path.join(current_app.config["DOCUMENTS_DIR"], str(order.id))
+    os.makedirs(order_dir, exist_ok=True)
+    file_path = os.path.join(order_dir, filename)
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(md)
+    size_bytes = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+
+    doc = WorkOrderDocument(
+        work_order=order,
+        filename=filename,
+        mime="text/markdown",
+        storage_path=os.path.relpath(file_path, current_app.config["DOCUMENTS_DIR"]).replace(os.path.sep, "/"),
+        size_bytes=int(size_bytes or 0),
+    )
+    db.session.add(doc)
+    db.session.commit()
+    return jsonify(
+        {
+            "ok": True,
+            "doc_id": doc.id,
+            "filename": doc.filename,
+            "storage_path": doc.storage_path,
+            "download_url": url_for("admin.get_document", filename=doc.storage_path),
+        }
+    )
+
+
+@bp.post("/appointments/<int:appointment_id>/ai-chat/save-md-json")
+@admin_required
+def appointment_ai_chat_save_md_json(appointment_id: int):
+    """Сохранить чат ИИ в Markdown и прикрепить к заявке."""
+    appointment = db.session.get(Appointment, appointment_id)
+    if not appointment:
+        abort(404)
+
+    payload = request.get_json(silent=True) or {}
+    messages = payload.get("messages") or []
+    if not isinstance(messages, list) or not messages:
+        return jsonify({"ok": False, "message": "Нет сообщений для сохранения."}), 400
+
+    md = _ai_chat_messages_to_md(messages)
+    if not md.strip():
+        return jsonify({"ok": False, "message": "Сообщения пустые."}), 400
+
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"AI_CHAT_APPOINTMENT_{appointment.id}_{ts}.md"
+    subdir = os.path.join("appointments", str(appointment.id))
+    abs_dir = os.path.join(current_app.config["DOCUMENTS_DIR"], subdir)
+    os.makedirs(abs_dir, exist_ok=True)
+    file_path = os.path.join(abs_dir, filename)
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(md)
+    size_bytes = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+
+    rel_path = os.path.relpath(file_path, current_app.config["DOCUMENTS_DIR"]).replace(os.path.sep, "/")
+    doc = AppointmentDocument(
+        appointment_id=appointment.id,
+        filename=filename,
+        mime="text/markdown",
+        storage_path=rel_path,
+        size_bytes=int(size_bytes or 0),
+    )
+    db.session.add(doc)
+    db.session.commit()
+    return jsonify(
+        {
+            "ok": True,
+            "doc_id": doc.id,
+            "filename": doc.filename,
+            "storage_path": doc.storage_path,
+            "download_url": url_for("admin.get_document", filename=doc.storage_path),
+        }
+    )
 
 @bp.get("/work-orders/<int:order_id>/print")
 @admin_required
@@ -3214,6 +4335,387 @@ def contact():
         webhook_url = f"{base}/telegram/webhook"
 
     return render_template("admin/contact.html", form=form, telegram_webhook_url=webhook_url)
+
+
+@bp.route("/ai-assistant", methods=["GET", "POST"])
+@admin_required
+def ai_assistant():
+    settings_obj = OrganizationSettings.get_settings()
+    form = AiAssistantSettingsForm(obj=settings_obj)
+    models = (
+        db.session.execute(
+            db.select(AiModel).where(AiModel.is_active.is_(True)).order_by(AiModel.title.asc())
+        )
+        .scalars()
+        .all()
+    )
+    models_json = [
+        {
+            "id": int(m.id),
+            "title": m.title,
+            "model_id": m.model_id,
+            "context": m.context or "",
+            "price_in_per_1m": float(m.price_in_per_1m) if m.price_in_per_1m is not None else None,
+            "price_out_per_1m": float(m.price_out_per_1m) if m.price_out_per_1m is not None else None,
+            "is_active": bool(m.is_active),
+        }
+        for m in (models or [])
+    ]
+    if request.method == "GET":
+        form.ai_api_key.data = ""
+
+    if form.validate_on_submit():
+        old_key = settings_obj.ai_api_key
+        form.populate_obj(settings_obj)
+        key = (form.ai_api_key.data or "").strip()
+        if not key:
+            settings_obj.ai_api_key = old_key
+
+        prov = (settings_obj.ai_provider or "").strip().lower()
+        if prov == "openrouter" and not (settings_obj.ai_base_url or "").strip():
+            settings_obj.ai_base_url = "https://openrouter.ai/api/v1"
+        if prov == "openai" and not (settings_obj.ai_base_url or "").strip():
+            settings_obj.ai_base_url = "https://api.openai.com/v1"
+
+        db.session.commit()
+        flash("Настройки ИИ-помощника сохранены", "success")
+        return redirect(url_for("admin.ai_assistant"))
+
+    return render_template(
+        "admin/ai_assistant.html",
+        form=form,
+        settings=settings_obj,
+        ai_models=models_json,
+    )
+
+
+@bp.post("/ai-model/current-json")
+@admin_required
+def ai_model_current_json():
+    settings_obj = OrganizationSettings.get_settings()
+    payload = request.get_json(silent=True) or {}
+    model_id = str(payload.get("model_id") or "").strip()
+    is_custom = bool(payload.get("is_custom", False))
+    if not model_id:
+        settings_obj.ai_model = ""
+        db.session.commit()
+        return jsonify({"ok": True, "model": ""})
+    if is_custom:
+        settings_obj.ai_model = model_id[:120]
+        db.session.commit()
+        return jsonify({"ok": True, "model": settings_obj.ai_model or ""})
+    row = (
+        db.session.execute(db.select(AiModel).where(AiModel.model_id == model_id))
+        .scalar_one_or_none()
+    )
+    if not row or not row.is_active:
+        return jsonify({"ok": False, "message": "Модель не найдена или отключена."}), 404
+    settings_obj.ai_model = row.model_id
+    db.session.commit()
+    return jsonify({"ok": True, "model": settings_obj.ai_model or ""})
+
+
+@bp.get("/ai-models")
+@admin_required
+def ai_models():
+    rows = db.session.execute(db.select(AiModel).order_by(AiModel.title.asc())).scalars().all()
+    models_json = [
+        {
+            "id": int(r.id),
+            "model": r.model_id,
+            "context": r.context or "",
+            "price_in_per_1m": float(r.price_in_per_1m) if r.price_in_per_1m is not None else None,
+            "price_out_per_1m": float(r.price_out_per_1m) if r.price_out_per_1m is not None else None,
+            "is_active": bool(r.is_active),
+        }
+        for r in rows
+    ]
+    return render_template("admin/ai_models.html", models=models_json)
+
+
+@bp.post("/ai-models/save-json")
+@admin_required
+def ai_models_save_json():
+    payload = request.get_json(silent=True) or {}
+    rid = payload.get("id")
+    model_id = str(payload.get("model") or payload.get("model_id") or "").strip()[:120]
+    context = str(payload.get("context") or "").strip()[:10]
+    pin = payload.get("price_in_per_1m")
+    pout = payload.get("price_out_per_1m")
+    is_active = bool(payload.get("is_active", True))
+    if not model_id:
+        return jsonify({"ok": False, "message": "Заполните Модель."}), 400
+
+    def _float_or_none(x):
+        s = str(x or "").strip().replace(",", ".")
+        if not s:
+            return None
+        try:
+            return float(s)
+        except ValueError:
+            return None
+
+    price_in = _float_or_none(pin)
+    price_out = _float_or_none(pout)
+
+    if rid and str(rid).isdigit():
+        row = db.session.get(AiModel, int(rid))
+        if not row:
+            return jsonify({"ok": False, "message": "Модель не найдена."}), 404
+        row.model_id = model_id
+        row.context = context or None
+        row.price_in_per_1m = price_in
+        row.price_out_per_1m = price_out
+        row.is_active = is_active
+    else:
+        row = AiModel(
+            title=model_id,
+            model_id=model_id,
+            context=context or None,
+            price_in_per_1m=price_in,
+            price_out_per_1m=price_out,
+            is_active=is_active,
+        )
+        db.session.add(row)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({"ok": False, "message": "Не удалось сохранить (возможно, такой model_id уже есть)."}), 400
+
+    rows = db.session.execute(db.select(AiModel).order_by(AiModel.title.asc())).scalars().all()
+    return jsonify(
+        {
+            "ok": True,
+            "models": [
+                {
+                    "id": int(r.id),
+                    "model": r.model_id,
+                    "context": r.context or "",
+                    "price_in_per_1m": float(r.price_in_per_1m) if r.price_in_per_1m is not None else None,
+                    "price_out_per_1m": float(r.price_out_per_1m) if r.price_out_per_1m is not None else None,
+                    "is_active": bool(r.is_active),
+                }
+                for r in rows
+            ],
+        }
+    )
+
+
+@bp.post("/ai-models/delete-json")
+@admin_required
+def ai_models_delete_json():
+    payload = request.get_json(silent=True) or {}
+    rid = payload.get("id")
+    if not rid or not str(rid).isdigit():
+        return jsonify({"ok": False, "message": "Некорректный id."}), 400
+    row = db.session.get(AiModel, int(rid))
+    if not row:
+        return jsonify({"ok": False, "message": "Модель не найдена."}), 404
+    db.session.delete(row)
+    db.session.commit()
+    rows = db.session.execute(db.select(AiModel).order_by(AiModel.title.asc())).scalars().all()
+    return jsonify(
+        {
+            "ok": True,
+            "models": [
+                {
+                    "id": int(r.id),
+                    "model": r.model_id,
+                    "context": r.context or "",
+                    "price_in_per_1m": float(r.price_in_per_1m) if r.price_in_per_1m is not None else None,
+                    "price_out_per_1m": float(r.price_out_per_1m) if r.price_out_per_1m is not None else None,
+                    "is_active": bool(r.is_active),
+                }
+                for r in rows
+            ],
+        }
+    )
+
+
+@bp.get("/ai-prompt-templates")
+@admin_required
+def ai_prompt_templates():
+    rows = db.session.execute(
+        db.select(AiPromptTemplate).order_by(AiPromptTemplate.is_active.desc(), AiPromptTemplate.title.asc())
+    ).scalars().all()
+    return render_template("admin/ai_prompt_templates.html", templates=rows)
+
+
+@bp.post("/ai-prompt-templates/create")
+@admin_required
+def ai_prompt_template_create():
+    title = (request.form.get("title") or "").strip()[:160]
+    body_md = (request.form.get("body_md") or "").strip()
+    if not title or not body_md:
+        flash("Заполните название и текст шаблона.", "warning")
+        return redirect(url_for("admin.ai_prompt_templates"))
+    row = AiPromptTemplate(title=title, body_md=body_md, is_active=True)
+    db.session.add(row)
+    db.session.commit()
+    flash("Шаблон сохранён.", "success")
+    return redirect(url_for("admin.ai_prompt_templates"))
+
+
+@bp.post("/ai-prompt-templates/<int:tpl_id>/toggle")
+@admin_required
+def ai_prompt_template_toggle(tpl_id: int):
+    row = db.session.get(AiPromptTemplate, tpl_id)
+    if not row:
+        abort(404)
+    row.is_active = not bool(row.is_active)
+    db.session.commit()
+    flash("Статус шаблона обновлён.", "success")
+    return redirect(url_for("admin.ai_prompt_templates"))
+
+
+@bp.post("/ai-prompt-templates/<int:tpl_id>/delete")
+@admin_required
+def ai_prompt_template_delete(tpl_id: int):
+    row = db.session.get(AiPromptTemplate, tpl_id)
+    if not row:
+        abort(404)
+    db.session.delete(row)
+    db.session.commit()
+    flash("Шаблон удалён.", "success")
+    return redirect(url_for("admin.ai_prompt_templates"))
+
+
+@bp.get("/ai-requests")
+@admin_required
+def ai_requests():
+    appt_id = request.args.get("appointment_id", "").strip()
+    wo_id = request.args.get("work_order_id", "").strip()
+    q = db.select(AiRequestLog).order_by(AiRequestLog.created_at.desc())
+    try:
+        if appt_id:
+            q = q.where(AiRequestLog.appointment_id == int(appt_id))
+        if wo_id:
+            q = q.where(AiRequestLog.work_order_id == int(wo_id))
+    except ValueError:
+        pass
+    rows = db.session.execute(q.limit(300)).scalars().all()
+
+    def _last_user_snippet(messages_json: str | None) -> str:
+        if not messages_json:
+            return ""
+        try:
+            arr = json.loads(messages_json)
+        except Exception:
+            return ""
+        if not isinstance(arr, list):
+            return ""
+        for m in reversed(arr):
+            if not isinstance(m, dict):
+                continue
+            if str(m.get("role") or "") == "user":
+                s = str(m.get("content") or "").strip()
+                return (s[:180] + "…") if len(s) > 180 else s
+        return ""
+
+    out = []
+    for r in rows:
+        out.append(
+            {
+                "id": int(r.id),
+                "created_at": r.created_at,
+                "appointment_id": int(r.appointment_id) if r.appointment_id else None,
+                "work_order_id": int(r.work_order_id) if r.work_order_id else None,
+                "template_id": int(r.template_id) if r.template_id else None,
+                "model": r.model or "",
+                "question": _last_user_snippet(r.messages_json),
+            }
+        )
+    return render_template("admin/ai_requests.html", rows=out)
+
+
+@bp.get("/ai-requests-json")
+@admin_required
+def ai_requests_json():
+    appt_id = (request.args.get("appointment_id") or "").strip()
+    wo_id = (request.args.get("work_order_id") or "").strip()
+    q = db.select(AiRequestLog).order_by(AiRequestLog.created_at.desc())
+    try:
+        if appt_id:
+            q = q.where(AiRequestLog.appointment_id == int(appt_id))
+        if wo_id:
+            q = q.where(AiRequestLog.work_order_id == int(wo_id))
+    except ValueError:
+        return jsonify({"ok": False, "message": "Некорректный id."}), 400
+
+    rows = db.session.execute(q.limit(200)).scalars().all()
+
+    out = []
+    for r in rows:
+        tpl_title = ""
+        if r.template_id:
+            t = db.session.get(AiPromptTemplate, int(r.template_id))
+            tpl_title = (t.title or "") if t else ""
+        out.append(
+            {
+                "id": int(r.id),
+                "created_at": r.created_at.isoformat() if r.created_at else "",
+                "model": r.model or "",
+                "template_id": int(r.template_id) if r.template_id else None,
+                "template_title": tpl_title,
+                "prompt_md": r.prompt_md or "",
+                "answer_text": r.answer_text or "",
+            }
+        )
+    return jsonify({"ok": True, "rows": out})
+
+
+@bp.get("/ai-request/<int:req_id>/json")
+@admin_required
+def ai_request_detail_json(req_id: int):
+    r = db.session.get(AiRequestLog, req_id)
+    if not r:
+        return jsonify({"ok": False, "message": "Запрос не найден."}), 404
+    tpl_title = ""
+    if r.template_id:
+        t = db.session.get(AiPromptTemplate, int(r.template_id))
+        tpl_title = (t.title or "") if t else ""
+    return jsonify(
+        {
+            "ok": True,
+            "id": int(r.id),
+            "created_at": r.created_at.isoformat() if r.created_at else "",
+            "model": r.model or "",
+            "template_id": int(r.template_id) if r.template_id else None,
+            "template_title": tpl_title,
+            "prompt_md": r.prompt_md or "",
+            "answer_text": r.answer_text or "",
+        }
+    )
+
+
+@bp.get("/ai-prompt-templates/<int:tpl_id>")
+@admin_required
+def ai_prompt_template_edit(tpl_id: int):
+    row = db.session.get(AiPromptTemplate, tpl_id)
+    if not row:
+        abort(404)
+    return render_template("admin/ai_prompt_template_edit.html", tpl=row)
+
+
+@bp.post("/ai-prompt-templates/<int:tpl_id>/update")
+@admin_required
+def ai_prompt_template_update(tpl_id: int):
+    row = db.session.get(AiPromptTemplate, tpl_id)
+    if not row:
+        abort(404)
+    title = (request.form.get("title") or "").strip()[:160]
+    body_md = (request.form.get("body_md") or "").strip()
+    is_active = bool(request.form.get("is_active"))
+    if not title or not body_md:
+        flash("Заполните название и текст шаблона.", "warning")
+        return redirect(url_for("admin.ai_prompt_template_edit", tpl_id=tpl_id))
+    row.title = title
+    row.body_md = body_md
+    row.is_active = is_active
+    db.session.commit()
+    flash("Шаблон обновлён.", "success")
+    return redirect(url_for("admin.ai_prompt_template_edit", tpl_id=tpl_id))
 
 
 @bp.post("/contact/test-email")

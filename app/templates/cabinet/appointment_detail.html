@@ -94,6 +94,18 @@
               {% if appointment.car_year or appointment.car_number %}
               <div class="text-secondary smaller">{{ appointment.car_year or '' }} {{ appointment.car_number or '' }}</div>
               {% endif %}
+              {% if appointment.engine_type or appointment.engine_volume_l or appointment.transmission_type or appointment.mileage_km is not none or appointment.has_turbo is not none %}
+              <div class="text-secondary smaller mt-2" id="cabinet-vehicle-summary">
+                {% set _et = 'бензин' if appointment.engine_type == 'petrol' else ('дизель' if appointment.engine_type == 'diesel' else '') %}
+                {{ _et }}
+                {% if appointment.has_turbo is not none %} · турбо: {{ 'да' if appointment.has_turbo else 'нет' }}{% endif %}
+                {% if appointment.engine_volume_l %} · {{ "%.1f"|format(appointment.engine_volume_l) }} л{% endif %}
+                {% if appointment.transmission_type %} · кпп: {{ appointment.transmission_type }}{% endif %}
+                {% if appointment.mileage_km is not none %} · пробег: {{ appointment.mileage_km }} км{% endif %}
+              </div>
+              {% else %}
+              <div class="text-secondary smaller mt-2" id="cabinet-vehicle-summary" style="display:none;"></div>
+              {% endif %}
               {% if is_editable %}
               <div class="mt-3 pt-2 border-top border-secondary border-opacity-25">
                 <label class="text-secondary mono small d-block mb-1" for="cabinet-appt-win-input">WIN НОМЕР</label>
@@ -106,6 +118,53 @@
               {% elif appointment.win_number %}
               <div class="text-secondary smaller mono mt-2">WIN: {{ appointment.win_number }}</div>
               {% endif %}
+
+              <div class="mt-3 pt-2 border-top border-secondary border-opacity-25">
+                <div class="text-secondary mono small mb-2">ДАННЫЕ_ДВИГАТЕЛЯ_И_КПП</div>
+                <div class="row g-2">
+                  <div class="col-12 col-md-6">
+                    <label class="text-secondary mono smaller d-block mb-1" for="cabinet-engine-type">Тип двигателя</label>
+                    <select id="cabinet-engine-type" class="form-select form-select-sm bg-dark text-white border-secondary border-opacity-50 mono" style="color-scheme: dark;">
+                      <option value="">—</option>
+                      <option value="petrol" {% if appointment.engine_type == 'petrol' %}selected{% endif %}>бензин</option>
+                      <option value="diesel" {% if appointment.engine_type == 'diesel' %}selected{% endif %}>дизель</option>
+                    </select>
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <label class="text-secondary mono smaller d-block mb-1" for="cabinet-has-turbo">Турбина</label>
+                    <select id="cabinet-has-turbo" class="form-select form-select-sm bg-dark text-white border-secondary border-opacity-50 mono" style="color-scheme: dark;">
+                      <option value="">—</option>
+                      <option value="yes" {% if appointment.has_turbo is sameas true %}selected{% endif %}>да</option>
+                      <option value="no" {% if appointment.has_turbo is sameas false %}selected{% endif %}>нет</option>
+                    </select>
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <label class="text-secondary mono smaller d-block mb-1" for="cabinet-engine-volume">Объем, л</label>
+                    <input id="cabinet-engine-volume" class="form-control form-control-sm bg-dark text-white border-secondary border-opacity-50 mono" inputmode="decimal" placeholder="2.0" value="{{ appointment.engine_volume_l or '' }}">
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <label class="text-secondary mono smaller d-block mb-1" for="cabinet-transmission-type">Тип КПП</label>
+                    <select id="cabinet-transmission-type" class="form-select form-select-sm bg-dark text-white border-secondary border-opacity-50 mono" style="color-scheme: dark;">
+                      <option value="">—</option>
+                      <option value="manual" {% if appointment.transmission_type == 'manual' %}selected{% endif %}>механика</option>
+                      <option value="auto" {% if appointment.transmission_type == 'auto' %}selected{% endif %}>автомат</option>
+                      <option value="robot" {% if appointment.transmission_type == 'robot' %}selected{% endif %}>робот</option>
+                      <option value="cvt" {% if appointment.transmission_type == 'cvt' %}selected{% endif %}>вариатор</option>
+                      <option value="other" {% if appointment.transmission_type == 'other' %}selected{% endif %}>другое</option>
+                    </select>
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <label class="text-secondary mono smaller d-block mb-1" for="cabinet-mileage">Пробег, км</label>
+                    <input id="cabinet-mileage" class="form-control form-control-sm bg-dark text-white border-secondary border-opacity-50 mono" inputmode="numeric" placeholder="150000" value="{{ appointment.mileage_km if appointment.mileage_km is not none else '' }}">
+                  </div>
+                  <div class="col-12 col-md-6 d-flex align-items-end">
+                    <button type="button" id="cabinet-vehicle-save" class="btn btn-sm btn-outline-info mono w-100">Сохранить</button>
+                  </div>
+                  <div class="col-12">
+                    <div id="cabinet-vehicle-msg" class="mono small" style="min-height: 1.1rem;"></div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -190,6 +249,19 @@
             <div class="text-warning">{{ appointment.cancel_reason }}</div>
           </div>
           {% endif %}
+        </div>
+      </div>
+
+      <div class="card bg-dark neon-border-blue shadow-lg mb-4" id="cabinet-ai-questions-card" style="display:none;">
+        <div class="card-header bg-transparent border-secondary border-opacity-25 py-3 d-flex align-items-center justify-content-between gap-2 flex-wrap">
+          <h5 class="card-title m-0 mono text-white">
+            <i class="bi bi-question-circle me-2"></i>УТОЧНЯЮЩИЕ ВОПРОСЫ
+          </h5>
+          <button type="button" class="btn btn-sm btn-outline-info mono" id="cabinet-ai-questions-save">СОХРАНИТЬ_ОТВЕТЫ</button>
+        </div>
+        <div class="card-body" id="cabinet-ai-questions-body"></div>
+        <div class="card-footer border-secondary border-opacity-25 bg-transparent py-2">
+          <div id="cabinet-ai-questions-status" class="mono small text-secondary"></div>
         </div>
       </div>
 
@@ -694,9 +766,12 @@
       <script>
         (function () {
           const snapshotUrl = {{ url_for('cabinet.appointment_snapshot_json', appointment_id=appointment.id)|tojson }};
+          const answersUrl = {{ url_for('cabinet.appointment_ai_questions_answer_json', appointment_id=appointment.id)|tojson }};
+          const vehicleUrl = {{ url_for('cabinet.appointment_vehicle_update_json', appointment_id=appointment.id)|tojson }};
           let lastStatus = {{ appointment.status|tojson }};
           let lastVisitKey = {{ visit_key|tojson }};
-          const pollMs = 8000;
+          const pollMs = 5000;
+          const csrfToken = '{{ csrf_token() }}';
 
           function escapeHtml(s) {
             return String(s || '')
@@ -891,6 +966,72 @@
               updateStatusBadge(d);
               renderWorksFromSnapshot(d);
 
+              // AI questions
+              (function renderAiQuestions() {
+                const card = document.getElementById('cabinet-ai-questions-card');
+                const body = document.getElementById('cabinet-ai-questions-body');
+                const status = document.getElementById('cabinet-ai-questions-status');
+                const saveBtn = document.getElementById('cabinet-ai-questions-save');
+                if (!card || !body || !saveBtn) return;
+                const qs = Array.isArray(d.ai_questions) ? d.ai_questions : [];
+                if (!qs.length) {
+                  card.style.display = 'none';
+                  return;
+                }
+                card.style.display = '';
+                body.innerHTML = qs.map((q, idx) => {
+                  const opts = Array.isArray(q.options) ? q.options : [];
+                  const cur = String(q.answer || '');
+                  const name = 'aiq_' + String(q.id);
+                  const radios = opts.map((opt, oi) => {
+                    const o = String(opt || '');
+                    const id = name + '_' + oi;
+                    const checked = (o && o === cur) ? 'checked' : '';
+                    return `
+                      <div class="form-check">
+                        <input class="form-check-input cabinet-aiq-radio" type="radio" name="${name}" id="${id}" value="${escapeHtml(o)}" data-qid="${q.id}" ${checked}>
+                        <label class="form-check-label text-white mono small" for="${id}">${escapeHtml(o)}</label>
+                      </div>`;
+                  }).join('');
+                  return `
+                    <div class="p-3 rounded border border-secondary border-opacity-25 bg-dark bg-opacity-50 mb-3">
+                      <div class="mono small text-secondary mb-2">${idx+1}) ${escapeHtml(String(q.question||''))}</div>
+                      ${radios || '<div class="text-secondary mono small">Нет вариантов.</div>'}
+                    </div>`;
+                }).join('');
+                if (status) status.textContent = '';
+
+                if (!saveBtn.dataset.bound) {
+                  saveBtn.dataset.bound = '1';
+                  saveBtn.addEventListener('click', async () => {
+                    const picks = Array.from(document.querySelectorAll('.cabinet-aiq-radio:checked'));
+                    const answers = picks.map((el) => ({ id: Number(el.dataset.qid || '0'), answer: el.value }));
+                    if (!answers.length) {
+                      if (status) status.textContent = 'Выберите варианты.';
+                      return;
+                    }
+                    saveBtn.disabled = true;
+                    if (status) status.textContent = 'Сохранение...';
+                    try {
+                      const r = await fetch(answersUrl, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                        body: JSON.stringify({ answers }),
+                      });
+                      const x = await r.json().catch(() => null);
+                      if (!r.ok || !x || !x.ok) throw new Error((x && x.message) || 'Ошибка');
+                      if (status) status.textContent = 'Сохранено';
+                      setTimeout(() => { if (status) status.textContent = ''; }, 1200);
+                    } catch (e) {
+                      if (status) status.textContent = e.message || 'Ошибка';
+                    } finally {
+                      saveBtn.disabled = false;
+                    }
+                  });
+                }
+              })();
+
               const winInputPoll = document.getElementById('cabinet-appt-win-input');
               if (winInputPoll && d.win_number !== undefined && document.activeElement !== winInputPoll) {
                 winInputPoll.value = d.win_number || '';
@@ -920,6 +1061,51 @@
                   }
                 }
               }
+
+              window.cabinetRenderVehicleSummary = function (v) {
+                const el = document.getElementById('cabinet-vehicle-summary');
+                if (!el) return;
+                const parts = [];
+                const et = (v && v.engine_type) ? String(v.engine_type) : '';
+                if (et === 'petrol') parts.push('бензин');
+                else if (et === 'diesel') parts.push('дизель');
+                const ht = (v && v.has_turbo);
+                if (ht === true) parts.push('турбо: да');
+                else if (ht === false) parts.push('турбо: нет');
+                const ev = (v && v.engine_volume_l != null) ? String(v.engine_volume_l) : '';
+                if (ev && ev !== '0' && ev !== '0.0') parts.push(`${ev} л`);
+                const tr = (v && v.transmission_type) ? String(v.transmission_type) : '';
+                if (tr) {
+                  const map = { manual: 'механика', auto: 'автомат', robot: 'робот', cvt: 'вариатор', other: 'другое' };
+                  parts.push(`кпп: ${map[tr] || tr}`);
+                }
+                const mil = (v && v.mileage_km != null) ? String(v.mileage_km) : '';
+                if (mil) parts.push(`пробег: ${mil} км`);
+                if (!parts.length) {
+                  el.textContent = '';
+                  el.style.display = 'none';
+                  return;
+                }
+                el.textContent = parts.join(' · ');
+                el.style.display = '';
+              };
+
+              // Vehicle fields sync (if not focused)
+              const v = d.vehicle || {};
+              const elEngineType = document.getElementById('cabinet-engine-type');
+              const elTurbo = document.getElementById('cabinet-has-turbo');
+              const elVol = document.getElementById('cabinet-engine-volume');
+              const elTr = document.getElementById('cabinet-transmission-type');
+              const elMil = document.getElementById('cabinet-mileage');
+              if (elEngineType && document.activeElement !== elEngineType) elEngineType.value = v.engine_type || '';
+              if (elTurbo && document.activeElement !== elTurbo) {
+                const hv = v.has_turbo;
+                elTurbo.value = (hv === true) ? 'yes' : ((hv === false) ? 'no' : '');
+              }
+              if (elVol && document.activeElement !== elVol) elVol.value = (v.engine_volume_l != null) ? String(v.engine_volume_l) : '';
+              if (elTr && document.activeElement !== elTr) elTr.value = v.transmission_type || '';
+              if (elMil && document.activeElement !== elMil) elMil.value = (v.mileage_km != null) ? String(v.mileage_km) : '';
+              if (typeof window.cabinetRenderVehicleSummary === 'function') window.cabinetRenderVehicleSummary(v);
             } catch (e) {}
           }
 
@@ -933,7 +1119,67 @@
               if (!intervalId) intervalId = setInterval(syncSnapshot, pollMs);
             }
           });
+          window.addEventListener('focus', function () {
+            syncSnapshot();
+            if (!intervalId && !document.hidden) intervalId = setInterval(syncSnapshot, pollMs);
+          });
+          window.addEventListener('pageshow', function () {
+            syncSnapshot();
+            if (!intervalId && !document.hidden) intervalId = setInterval(syncSnapshot, pollMs);
+          });
           syncSnapshot();
+        })();
+      </script>
+
+      <script>
+        (function () {
+          const btn = document.getElementById('cabinet-vehicle-save');
+          if (!btn) return;
+          const msg = document.getElementById('cabinet-vehicle-msg');
+          const engineType = document.getElementById('cabinet-engine-type');
+          const turbo = document.getElementById('cabinet-has-turbo');
+          const vol = document.getElementById('cabinet-engine-volume');
+          const tr = document.getElementById('cabinet-transmission-type');
+          const mil = document.getElementById('cabinet-mileage');
+          const csrfToken = '{{ csrf_token() }}';
+          const vehicleUrl = {{ url_for('cabinet.appointment_vehicle_update_json', appointment_id=appointment.id)|tojson }};
+          function setMsg(t, err) {
+            if (!msg) return;
+            msg.textContent = t || '';
+            msg.classList.toggle('text-danger', !!err);
+            msg.classList.toggle('text-success', !err && !!t && t !== 'Сохранение...');
+            msg.classList.toggle('text-secondary', !t);
+          }
+          btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            setMsg('Сохранение...', false);
+            try {
+              const payload = {
+                engine_type: engineType ? engineType.value : '',
+                has_turbo: turbo ? (turbo.value === 'yes' ? true : (turbo.value === 'no' ? false : null)) : null,
+                engine_volume_l: vol ? vol.value : '',
+                transmission_type: tr ? tr.value : '',
+                mileage_km: mil ? mil.value : '',
+              };
+              const r = await fetch(vehicleUrl, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                body: JSON.stringify(payload),
+              });
+              const d = await r.json().catch(() => null);
+              if (!r.ok || !d || !d.ok) throw new Error((d && d.message) || 'Ошибка');
+              if (d.vehicle && typeof window.cabinetRenderVehicleSummary === 'function') {
+                window.cabinetRenderVehicleSummary(d.vehicle);
+              }
+              setMsg('Сохранено', false);
+              setTimeout(() => setMsg('', false), 1200);
+            } catch (e) {
+              setMsg(e.message || 'Ошибка', true);
+            } finally {
+              btn.disabled = false;
+            }
+          });
         })();
       </script>
 

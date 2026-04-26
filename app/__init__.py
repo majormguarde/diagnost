@@ -58,6 +58,19 @@ def _ensure_runtime_schema() -> None:
         db.session.execute(text("ALTER TABLE appointment_items ADD COLUMN declined_by_client INTEGER DEFAULT 0"))
         db.session.commit()
 
+    appt_rows = db.session.execute(text("PRAGMA table_info(appointments)")).mappings().all()
+    appt_columns = {r["name"] for r in appt_rows}
+    for col, ddl in (
+        ("engine_type", "VARCHAR(16)"),
+        ("has_turbo", "INTEGER"),
+        ("engine_volume_l", "REAL"),
+        ("transmission_type", "VARCHAR(24)"),
+        ("mileage_km", "INTEGER"),
+    ):
+        if col not in appt_columns:
+            db.session.execute(text(f"ALTER TABLE appointments ADD COLUMN {col} {ddl}"))
+            db.session.commit()
+
     user_rows = db.session.execute(text("PRAGMA table_info(users)")).mappings().all()
     user_columns = {r["name"] for r in user_rows}
     for col, ddl in (
@@ -84,6 +97,14 @@ def _ensure_runtime_schema() -> None:
         ("telegram_bot_token", "VARCHAR(255)"),
         ("site_public_url", "VARCHAR(255)"),
         ("sbp_phone", "VARCHAR(32)"),
+        ("ai_provider", "VARCHAR(32)"),
+        ("ai_base_url", "VARCHAR(255)"),
+        ("ai_api_key", "VARCHAR(255)"),
+        ("ai_model", "VARCHAR(120)"),
+        ("ai_site_url", "VARCHAR(255)"),
+        ("ai_app_name", "VARCHAR(120)"),
+        ("ai_default_prompt_template_id_appt", "INTEGER"),
+        ("ai_default_prompt_template_id_wo", "INTEGER"),
     ):
         if col not in org_columns:
             db.session.execute(text(f"ALTER TABLE organization_settings ADD COLUMN {col} {ddl}"))
@@ -152,6 +173,115 @@ def _ensure_runtime_schema() -> None:
         )
     """))
     db.session.commit()
+
+    # Документы к заявкам (в т.ч. ответы ИИ в Markdown)
+    db.session.execute(
+        text(
+            """
+        CREATE TABLE IF NOT EXISTS appointment_documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            appointment_id INTEGER NOT NULL,
+            filename VARCHAR(255) NOT NULL,
+            mime VARCHAR(100) NOT NULL,
+            storage_path VARCHAR(500) NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            uploaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (appointment_id) REFERENCES appointments(id)
+        )
+    """
+        )
+    )
+    db.session.commit()
+
+    # Шаблоны промптов для ИИ (Markdown)
+    db.session.execute(
+        text(
+            """
+        CREATE TABLE IF NOT EXISTS ai_prompt_templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title VARCHAR(160) NOT NULL,
+            body_md TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """
+        )
+    )
+    db.session.commit()
+
+    db.session.execute(
+        text(
+            """
+        CREATE TABLE IF NOT EXISTS ai_request_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            appointment_id INTEGER,
+            work_order_id INTEGER,
+            template_id INTEGER,
+            model VARCHAR(120),
+            prompt_md TEXT,
+            messages_json TEXT,
+            answer_text TEXT,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (appointment_id) REFERENCES appointments(id),
+            FOREIGN KEY (work_order_id) REFERENCES work_orders(id),
+            FOREIGN KEY (template_id) REFERENCES ai_prompt_templates(id)
+        )
+    """
+        )
+    )
+    db.session.commit()
+
+    db.session.execute(
+        text(
+            """
+        CREATE TABLE IF NOT EXISTS appointment_ai_questions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            appointment_id INTEGER NOT NULL,
+            ai_request_log_id INTEGER,
+            question TEXT NOT NULL,
+            options_json TEXT NOT NULL DEFAULT '[]',
+            client_answer TEXT,
+            answered_at DATETIME,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (appointment_id) REFERENCES appointments(id),
+            FOREIGN KEY (ai_request_log_id) REFERENCES ai_request_logs(id)
+        )
+    """
+        )
+    )
+    db.session.commit()
+
+    # Справочник моделей ИИ (для комбобокса выбора актуальной модели)
+    db.session.execute(
+        text(
+            """
+        CREATE TABLE IF NOT EXISTS ai_models (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title VARCHAR(160) NOT NULL,
+            model_id VARCHAR(120) NOT NULL UNIQUE,
+            context TEXT,
+            price_in_per_1m REAL,
+            price_out_per_1m REAL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """
+        )
+    )
+    db.session.commit()
+
+    ai_models_rows = db.session.execute(text("PRAGMA table_info(ai_models)")).mappings().all()
+    ai_models_columns = {r["name"] for r in ai_models_rows}
+    for col, ddl in (
+        ("context", "TEXT"),
+        ("price_in_per_1m", "REAL"),
+        ("price_out_per_1m", "REAL"),
+    ):
+        if col not in ai_models_columns:
+            db.session.execute(text(f"ALTER TABLE ai_models ADD COLUMN {col} {ddl}"))
+            db.session.commit()
 
 
 def create_app() -> Flask:

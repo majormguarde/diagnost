@@ -1,0 +1,146 @@
+{% extends "admin/admin_base.html" %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center justify-content-between gap-3 mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+    <div>
+      <span class="badge neon-border-blue text-white mono mb-2">AI_REQUESTS.LOG</span>
+      <h1 class="h2 m-0 neon-text-blue mono">История запросов ИИ</h1>
+    </div>
+  </div>
+
+  <div class="card bg-dark neon-border-blue shadow-lg">
+    <div class="card-header border-secondary border-opacity-25 bg-transparent py-3">
+      <h5 class="card-title m-0 mono text-white small"><i class="bi bi-clock-history me-2"></i>СПИСОК</h5>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-dark table-hover mb-0 mono small">
+          <thead class="text-secondary border-secondary border-opacity-25">
+            <tr>
+              <th class="ps-4">ВРЕМЯ</th>
+              <th>ОБЪЕКТ</th>
+              <th>МОДЕЛЬ</th>
+              <th>ВОПРОС (последний user)</th>
+            </tr>
+          </thead>
+          <tbody class="border-secondary border-opacity-10">
+            {% for r in rows %}
+            <tr class="js-ai-row" role="button" data-ai-id="{{ r.id }}">
+              <td class="ps-4 text-white">{{ r.created_at.strftime('%d.%m.%Y %H:%M') if r.created_at else '' }}</td>
+              <td class="text-white">
+                {% if r.work_order_id %}
+                  <a class="link-info" href="{{ url_for('admin.work_order_detail', order_id=r.work_order_id) }}">WO #{{ r.work_order_id }}</a>
+                {% elif r.appointment_id %}
+                  <a class="link-info" href="{{ url_for('admin.appointment_detail', appointment_id=r.appointment_id) }}">APPT #{{ r.appointment_id }}</a>
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+              <td class="text-secondary">{{ r.model }}</td>
+              <td class="text-white">{{ r.question }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="4" class="text-center py-4 text-secondary">Запросов пока нет.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Answer modal -->
+<div class="modal fade" id="aiRequestAnswerModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable modal-dialog-centered">
+    <div class="modal-content bg-dark neon-border-blue">
+      <div class="modal-header border-secondary border-opacity-25">
+        <h5 class="modal-title mono text-white"><i class="bi bi-stars me-2"></i>ОТВЕТ_ИИ</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2">
+          <div class="mono small text-secondary" id="aiReqMeta"></div>
+          <button type="button" class="btn btn-sm btn-outline-info mono" id="aiReqCopy">
+            <i class="bi bi-clipboard me-1"></i>КОПИЯ
+          </button>
+        </div>
+        <pre id="aiReqAnswer" class="p-3 rounded border border-secondary border-opacity-25 bg-dark bg-opacity-50 text-white mono small" style="white-space:pre-wrap; min-height: 18rem;"></pre>
+      </div>
+      <div class="modal-footer border-secondary border-opacity-25">
+        <button type="button" class="btn btn-outline-secondary mono" data-bs-dismiss="modal">Закрыть</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    function init() {
+      const body = document.querySelector('tbody');
+      const modalEl = document.getElementById('aiRequestAnswerModal');
+      if (!body || !modalEl) return;
+      if (!window.bootstrap || !window.bootstrap.Modal) return;
+      const metaEl = document.getElementById('aiReqMeta');
+      const ansEl = document.getElementById('aiReqAnswer');
+      const copyBtn = document.getElementById('aiReqCopy');
+      const detailUrlTmpl = {{ url_for('admin.ai_request_detail_json', req_id=0)|tojson }};
+      const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+      let lastAnswer = '';
+
+    function escapeHtml(s) {
+      return String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+      async function loadAnswer(id) {
+      if (!id) return;
+      if (metaEl) metaEl.textContent = 'Загрузка...';
+      if (ansEl) ansEl.textContent = '';
+      const url = String(detailUrlTmpl).replace(/0\/json$/, String(id) + '/json');
+      const r = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d || !d.ok) throw new Error((d && d.message) || 'Ошибка');
+      const meta = [
+        d.created_at ? String(d.created_at).replace('T', ' ').slice(0, 19) : '',
+        d.model ? ('model: ' + d.model) : '',
+        d.template_title ? ('tpl: ' + d.template_title) : ''
+      ].filter(Boolean).join(' · ');
+      if (metaEl) metaEl.textContent = meta;
+      lastAnswer = String(d.answer_text || '');
+      if (ansEl) ansEl.textContent = lastAnswer;
+      }
+
+      body.addEventListener('click', async (e) => {
+      const tr = e.target.closest('tr.js-ai-row');
+      if (!tr) return;
+      if (e.target.closest('a')) return;
+      const id = Number(tr.dataset.aiId || '0');
+      try {
+        await loadAnswer(id);
+        modal.show();
+      } catch (err) {
+        if (metaEl) metaEl.textContent = err.message || 'Ошибка';
+        modal.show();
+      }
+      });
+
+      if (copyBtn) copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(lastAnswer || '');
+      } catch (e) {}
+      });
+    }
+
+    // Bootstrap bundle is loaded after block content in admin layout,
+    // so initialize on full window load.
+    window.addEventListener('load', init);
+  })();
+</script>
+{% endblock %}
+

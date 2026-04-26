@@ -1,0 +1,218 @@
+{% extends "admin/admin_base.html" %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+    <div>
+      <span class="badge neon-border-blue text-white mono mb-2">AI_MODELS.DB</span>
+      <h1 class="h2 m-0 neon-text-blue mono">МОДЕЛИ_ИИ</h1>
+    </div>
+    <a href="{{ url_for('admin.ai_assistant') }}" class="btn btn-outline-info mono">/к_настройкам_ии</a>
+  </div>
+
+  <div class="card bg-dark neon-border-blue shadow-lg">
+    <div class="card-header border-secondary border-opacity-25 bg-transparent py-3 d-flex align-items-center justify-content-between gap-2 flex-wrap">
+      <h5 class="card-title m-0 mono text-white small"><i class="bi bi-table me-2"></i>МОДЕЛИ_И_ЦЕНЫ</h5>
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <button type="button" id="ai-model-add" class="btn btn-sm btn-outline-info mono">
+          <i class="bi bi-plus-lg me-1"></i>ДОБАВИТЬ
+        </button>
+        <div id="ai-models-msg" class="mono small text-secondary" style="min-height: 1.1rem;"></div>
+      </div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-dark table-hover align-middle mb-0 mono small">
+          <thead class="text-secondary border-secondary border-opacity-25">
+            <tr>
+              <th class="ps-4">МОДЕЛЬ</th>
+              <th style="width: 7rem;">КОНТЕКСТ</th>
+              <th style="width: 9rem;">ВХОД/1M</th>
+              <th style="width: 9rem;">ИСХОД/1M</th>
+              <th class="pe-4 text-end" style="width: 9.5rem;">ДЕЙСТВИЯ</th>
+            </tr>
+          </thead>
+          <tbody id="ai-models-body" class="border-secondary border-opacity-10"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const saveUrl = {{ url_for('admin.ai_models_save_json')|tojson }};
+    const delUrl = {{ url_for('admin.ai_models_delete_json')|tojson }};
+    const csrfToken = '{{ csrf_token() }}';
+    let models = {{ (models or [])|tojson }};
+    const elBody = document.getElementById('ai-models-body');
+    const elMsg = document.getElementById('ai-models-msg');
+
+    function setMsg(t, err) {
+      if (!elMsg) return;
+      elMsg.textContent = t || '';
+      elMsg.classList.toggle('text-danger', !!err);
+      elMsg.classList.toggle('text-success', !err && !!t);
+      elMsg.classList.toggle('text-secondary', !t);
+    }
+
+    function renderList() {
+      if (!elBody) return;
+      const rows = (models || []).map((m) => rowViewHtml(m)).join('');
+      elBody.innerHTML = rows || '<tr><td class="ps-4 text-secondary" colspan="5">Пока нет моделей.</td></tr>';
+    }
+
+    function escapeHtml(s) {
+      return String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function rowViewHtml(m) {
+      const enabled = !!m.is_active;
+      const eye = enabled ? 'bi-eye' : 'bi-eye-slash';
+      const eyeCls = enabled ? 'text-success' : 'text-secondary';
+      const pIn = (m.price_in_per_1m != null) ? String(m.price_in_per_1m) : '';
+      const pOut = (m.price_out_per_1m != null) ? String(m.price_out_per_1m) : '';
+      return `
+        <tr data-id="${m.id}" data-active="${enabled ? '1' : '0'}">
+          <td class="ps-4 text-white"><span class="mono">${escapeHtml(m.model || '')}</span></td>
+          <td class="text-info">${escapeHtml(m.context || '')}</td>
+          <td class="text-white">${escapeHtml(pIn)}</td>
+          <td class="text-white">${escapeHtml(pOut)}</td>
+          <td class="pe-4 text-end">
+            <button type="button" class="btn btn-sm btn-outline-info border-0 ai-row-edit" title="Редактировать"><i class="bi bi-pencil"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-secondary border-0 ai-row-toggle" title="Вкл/выкл"><i class="bi ${eye} ${eyeCls}"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-danger border-0 ai-row-del" title="Удалить"><i class="bi bi-trash"></i></button>
+          </td>
+        </tr>`;
+    }
+
+    function rowEditHtml(m) {
+      const enabled = !!m.is_active;
+      const pIn = (m.price_in_per_1m != null) ? String(m.price_in_per_1m) : '';
+      const pOut = (m.price_out_per_1m != null) ? String(m.price_out_per_1m) : '';
+      return `
+        <tr data-id="${m.id}" data-edit="1" data-active="${enabled ? '1' : '0'}">
+          <td class="ps-4"><input class="form-control form-control-sm bg-dark text-white border-secondary border-opacity-50 mono ai-f-model" value="${escapeHtml(m.model || '')}" placeholder="qwen/qwen3.6-plus"></td>
+          <td><input class="form-control form-control-sm bg-dark text-white border-secondary border-opacity-50 mono ai-f-context" maxlength="10" value="${escapeHtml(m.context || '')}" placeholder="262K/1M"></td>
+          <td><input class="form-control form-control-sm bg-dark text-white border-secondary border-opacity-50 mono ai-f-in" inputmode="decimal" value="${escapeHtml(pIn)}" placeholder="31"></td>
+          <td><input class="form-control form-control-sm bg-dark text-white border-secondary border-opacity-50 mono ai-f-out" inputmode="decimal" value="${escapeHtml(pOut)}" placeholder="191"></td>
+          <td class="pe-4 text-end">
+            <button type="button" class="btn btn-sm btn-info ai-row-save" title="Сохранить"><i class="bi bi-check2"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-secondary ai-row-cancel" title="Отменить"><i class="bi bi-x-lg"></i></button>
+          </td>
+        </tr>`;
+    }
+
+    async function postJson(url, payload) {
+      const r = await fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+        body: JSON.stringify(payload || {}),
+      });
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d || !d.ok) throw new Error((d && d.message) || 'Ошибка');
+      return d;
+    }
+
+    renderList();
+
+    function getById(id) {
+      return (models || []).find((x) => Number(x.id) === Number(id));
+    }
+
+    function replaceRowHtml(tr, html) {
+      if (!tr) return null;
+      const tmp = document.createElement('tbody');
+      tmp.innerHTML = html.trim();
+      const newTr = tmp.querySelector('tr');
+      if (!newTr) return null;
+      tr.replaceWith(newTr);
+      return newTr;
+    }
+
+    const btnAdd = document.getElementById('ai-model-add');
+    if (btnAdd) btnAdd.addEventListener('click', () => {
+      if (!elBody) return;
+      if (elBody.querySelector('tr[data-id="0"]')) return;
+      const blank = { id: 0, model: '', context: '', price_in_per_1m: '', price_out_per_1m: '', is_active: true };
+      elBody.insertAdjacentHTML('afterbegin', rowEditHtml(blank));
+    });
+
+    if (elBody) elBody.addEventListener('click', async (e) => {
+      const tr = e.target.closest('tr[data-id]');
+      if (!tr) return;
+      const id = Number(tr.dataset.id || '0');
+
+      if (e.target.closest('.ai-row-edit')) {
+        const row = getById(id);
+        if (!row) return;
+        replaceRowHtml(tr, rowEditHtml(row));
+        return;
+      }
+
+      if (e.target.closest('.ai-row-cancel')) {
+        if (id === 0) { tr.remove(); return; }
+        const row = getById(id);
+        if (!row) return;
+        replaceRowHtml(tr, rowViewHtml(row));
+        return;
+      }
+
+      if (e.target.closest('.ai-row-save')) {
+        const model = tr.querySelector('.ai-f-model')?.value || '';
+        const context = tr.querySelector('.ai-f-context')?.value || '';
+        const pin = tr.querySelector('.ai-f-in')?.value || '';
+        const pout = tr.querySelector('.ai-f-out')?.value || '';
+        setMsg('Сохранение...', false);
+        try {
+          const d = await postJson(saveUrl, { id: id || null, model, context, price_in_per_1m: pin, price_out_per_1m: pout, is_active: true });
+          models = d.models || [];
+          renderList();
+          setMsg('Сохранено', false);
+          setTimeout(() => setMsg('', false), 1200);
+        } catch (err) {
+          setMsg(err.message || 'Ошибка', true);
+        }
+        return;
+      }
+
+      if (e.target.closest('.ai-row-toggle')) {
+        const row = getById(id);
+        if (!row) return;
+        const next = !row.is_active;
+        setMsg('Сохранение...', false);
+        try {
+          const d = await postJson(saveUrl, { id: id, model: row.model, context: row.context || '', price_in_per_1m: row.price_in_per_1m ?? '', price_out_per_1m: row.price_out_per_1m ?? '', is_active: next });
+          models = d.models || [];
+          renderList();
+          setMsg('OK', false);
+          setTimeout(() => setMsg('', false), 600);
+        } catch (err) {
+          setMsg(err.message || 'Ошибка', true);
+        }
+        return;
+      }
+
+      if (e.target.closest('.ai-row-del')) {
+        if (!confirm('Удалить модель?')) return;
+        setMsg('Удаление...', false);
+        try {
+          const d = await postJson(delUrl, { id });
+          models = d.models || [];
+          renderList();
+          setMsg('Удалено', false);
+          setTimeout(() => setMsg('', false), 1200);
+        } catch (err) {
+          setMsg(err.message || 'Ошибка', true);
+        }
+      }
+    });
+  })();
+</script>
+{% endblock %}
+

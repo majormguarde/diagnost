@@ -1,0 +1,227 @@
+{% extends "admin/admin_base.html" %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center justify-content-between gap-3 mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+    <div>
+      <span class="badge neon-border-blue text-white mono mb-2">AI_PROMPT_TEMPLATES.MD</span>
+      <h1 class="h2 m-0 neon-text-blue mono">Шаблоны промптов (Markdown)</h1>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-5">
+      <div class="card bg-dark neon-border-blue shadow-lg mb-4">
+        <div class="card-header border-secondary border-opacity-25 bg-transparent py-3">
+          <h5 class="card-title m-0 mono text-white small"><i class="bi bi-pencil-square me-2"></i>ШАБЛОН</h5>
+        </div>
+        <div class="card-body p-4">
+          <form id="tplEditorForm" method="POST" action="{{ url_for('admin.ai_prompt_template_create') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="tpl_id" id="tpl_id" value="">
+            <div class="mb-3">
+              <label class="form-label mono text-secondary small">НАЗВАНИЕ</label>
+              <input id="tpl_title" name="title" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" maxlength="160" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label mono text-secondary small">ТЕКСТ (MD)</label>
+              <textarea id="tpl_body" name="body_md" class="form-control bg-dark text-white border-secondary border-opacity-50 mono small" rows="18" required></textarea>
+              <div class="form-text text-secondary mono smaller mt-2">
+                Можно хранить структуру, списки, заголовки, плейсхолдеры текстом (например: <span class="text-white">{VIN}</span>).
+              </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+              <div class="form-check me-auto">
+                <input class="form-check-input" type="checkbox" id="tpl_active" name="is_active" value="1" checked>
+                <label class="form-check-label mono text-secondary small" for="tpl_active">active</label>
+              </div>
+              <button type="button" id="tpl_new" class="btn btn-outline-info mono">НОВЫЙ</button>
+              <button type="button" id="tpl_example" class="btn btn-outline-secondary mono">ПРИМЕР</button>
+              <button type="button" id="tpl_clear" class="btn btn-outline-secondary mono">ОЧИСТИТЬ</button>
+              <button type="submit" class="btn btn-info mono fw-bold">СОХРАНИТЬ</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-7">
+      <div class="card bg-dark neon-border-blue shadow-lg">
+        <div class="card-header border-secondary border-opacity-25 bg-transparent py-3">
+          <h5 class="card-title m-0 mono text-white small"><i class="bi bi-list-ul me-2"></i>СПИСОК</h5>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 mono small">
+              <thead class="text-secondary border-secondary border-opacity-25">
+                <tr>
+                  <th class="ps-4">НАЗВАНИЕ</th>
+                  <th>СТАТУС</th>
+                  <th class="text-end pe-4">ДЕЙСТВИЯ</th>
+                </tr>
+              </thead>
+              <tbody class="border-secondary border-opacity-10" id="tplTableBody">
+                {% for t in templates %}
+                <tr class="js-tpl-row" data-tpl-id="{{ t.id }}">
+                  <td class="ps-4 text-white">> {{ t.title }}</td>
+                  <td>
+                    {% if t.is_active %}
+                      <span class="badge bg-success mono">active</span>
+                    {% else %}
+                      <span class="badge bg-secondary mono">off</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-end pe-4">
+                    <a href="{{ url_for('admin.ai_prompt_template_edit', tpl_id=t.id) }}" class="btn btn-sm btn-outline-info mono">
+                      <i class="bi bi-pencil"></i>
+                    </a>
+                    <form method="POST" action="{{ url_for('admin.ai_prompt_template_toggle', tpl_id=t.id) }}" class="d-inline">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" class="btn btn-sm btn-outline-warning mono">{{ 'выкл' if t.is_active else 'вкл' }}</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('admin.ai_prompt_template_delete', tpl_id=t.id) }}" class="d-inline" onsubmit="return confirm('Удалить шаблон?');">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" class="btn btn-sm btn-outline-danger mono"><i class="bi bi-trash"></i></button>
+                    </form>
+                  </td>
+                </tr>
+                {% else %}
+                <tr>
+                  <td colspan="3" class="text-center py-4 text-secondary">Шаблонов пока нет.</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+  <script>
+    (function () {
+      const body = document.getElementById('tplTableBody');
+      const form = document.getElementById('tplEditorForm');
+      const idEl = document.getElementById('tpl_id');
+      const titleEl = document.getElementById('tpl_title');
+      const mdEl = document.getElementById('tpl_body');
+      const activeEl = document.getElementById('tpl_active');
+      const btnNew = document.getElementById('tpl_new');
+      const btnExample = document.getElementById('tpl_example');
+      const btnClear = document.getElementById('tpl_clear');
+      if (!body || !form || !idEl || !titleEl || !mdEl || !activeEl) return;
+
+      const updateTpl = {{ url_for('admin.ai_prompt_template_update', tpl_id=0)|tojson }};
+      const createUrl = {{ url_for('admin.ai_prompt_template_create')|tojson }};
+      const tplMap = (function () {
+        const m = {};
+        {% for t in templates %}
+          m[String({{ t.id }})] = {
+            id: {{ t.id }},
+            title: {{ (t.title or "")|tojson }},
+            body_md: {{ (t.body_md or "")|tojson }},
+            is_active: {{ 1 if t.is_active else 0 }},
+          };
+        {% endfor %}
+        return m;
+      })();
+
+      function clearActive() {
+        body.querySelectorAll('.js-tpl-row.is-active-row').forEach((tr) => tr.classList.remove('is-active-row'));
+      }
+      function setEditorFromRow(tr) {
+        if (!tr) return;
+        const tId = tr.getAttribute('data-tpl-id') || '';
+        const obj = tplMap[String(tId || '')] || null;
+        const tTitle = obj ? obj.title : '';
+        const tActive = obj ? !!obj.is_active : false;
+        const md = obj ? obj.body_md : '';
+        idEl.value = String(tId || '');
+        titleEl.value = String(tTitle || '');
+        mdEl.value = String(md || '');
+        activeEl.checked = !!tActive;
+        form.action = (tId && String(tId).trim())
+          ? updateTpl.replace(/0\/update$/, String(tId) + '/update')
+          : createUrl;
+        clearActive();
+        tr.classList.add('is-active-row');
+      }
+
+      body.addEventListener('click', (e) => {
+        const tr = e.target.closest('.js-tpl-row');
+        if (!tr) return;
+        // don't hijack clicks on buttons/links/forms
+        if (e.target.closest('a,button,form,input,select,textarea,label')) return;
+        setEditorFromRow(tr);
+      });
+
+      function setNew() {
+        clearActive();
+        idEl.value = '';
+        titleEl.value = '';
+        mdEl.value = '';
+        activeEl.checked = true;
+        form.action = createUrl;
+        titleEl.focus();
+      }
+
+      function clearText() {
+        mdEl.value = '';
+        mdEl.focus();
+      }
+
+      if (btnNew) btnNew.addEventListener('click', (e) => { e.preventDefault(); setNew(); });
+      if (btnExample) btnExample.addEventListener('click', (e) => {
+        e.preventDefault();
+        const exampleTitle = 'Диагност: базовый анализ';
+        const exampleMd =
+`Роль: автоэлектрик-диагност.
+Задача: гипотезы причин, вопросы для уточнения, план диагностики, приоритеты и риски.
+Не делай выводов без проверок.
+
+Входные данные:
+- Клиент: {{CLIENT_NAME}}
+- Авто: {{CAR_MAKE}} {{CAR_MODEL}} {{CAR_YEAR}}
+- Госномер: {{CAR_NUMBER}}
+- VIN/WIN: {{WIN}}
+- Двигатель: {{ENGINE}}
+- КПП: {{TRANSMISSION}}
+- Пробег: {{MILEAGE}}
+
+Симптомы:
+{{ISSUES}}
+
+Ответ:
+1) Резюме
+2) Гипотезы (топ-5)
+3) Вопросы для уточнения (до 7)
+4) План диагностики (шаги)
+5) Риски/предупреждения
+
+В конце добавь JSON-блок:
+\`\`\`json
+{
+  "clarifying_questions": [
+    { "q": "…", "options": ["…","…","…"] }
+  ]
+}
+\`\`\`
+`;
+        // keep current selection, just fill editor
+        if (!titleEl.value) titleEl.value = exampleTitle;
+        mdEl.value = exampleMd;
+        mdEl.focus();
+      });
+      if (btnClear) btnClear.addEventListener('click', (e) => { e.preventDefault(); clearText(); });
+
+      const first = body.querySelector('.js-tpl-row');
+      if (first) setEditorFromRow(first);
+    })();
+  </script>
+
+<style>
+  tr.js-tpl-row.is-active-row > td {
+    background: rgba(13, 202, 240, 0.10) !important;
+  }
+</style>
+{% endblock %}
+

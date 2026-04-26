@@ -1,0 +1,286 @@
+{% extends "admin/admin_base.html" %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex align-items-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3">
+    <div>
+      <span class="badge neon-border-blue text-white mono mb-2">AI_ASSISTANT.CFG</span>
+      <h1 class="h2 m-0 neon-text-blue mono">ИИ-ПОМОЩНИК</h1>
+    </div>
+    <a href="{{ url_for('admin.index') }}" class="btn btn-outline-info mono">/на_дашборд</a>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-7">
+      <div class="card bg-dark neon-border-blue shadow-lg">
+        <div class="card-header border-secondary border-opacity-25 bg-transparent py-3">
+          <h5 class="card-title m-0 mono text-white small">
+            <i class="bi bi-sliders2 me-2"></i>НАСТРОЙКИ_ПРОВАЙДЕРА
+          </h5>
+        </div>
+        <div class="card-body">
+          <form method="POST">
+            {{ form.hidden_tag() }}
+
+            <div class="mb-3">
+              <label class="form-label mono text-secondary smaller">{{ form.ai_provider.label | upper }}</label>
+              {{ form.ai_provider(class="form-select bg-dark text-white border-secondary border-opacity-50 mono", style="color-scheme: dark;") }}
+              <div class="form-text text-secondary mono smaller">
+                Рекомендуется: router.ai (OpenAI-compatible) — удобно переключать модели (Qwen и др.).
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label mono text-secondary smaller">{{ form.ai_base_url.label | upper }}</label>
+              {{ form.ai_base_url(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="https://openrouter.ai/api/v1") }}
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label mono text-secondary smaller">{{ form.ai_api_key.label | upper }}</label>
+              {{ form.ai_api_key(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="(вставьте ключ)") }}
+              <div class="form-text text-secondary mono smaller">
+                Если оставить пустым — текущий ключ не будет перезаписан.
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                <label class="form-label mono text-secondary smaller mb-1">АКТУАЛЬНАЯ_МОДЕЛЬ (ИЗ_СПРАВОЧНИКА)</label>
+                <a class="mono smaller text-info text-decoration-none" href="{{ url_for('admin.ai_models') }}">/справочник_моделей</a>
+              </div>
+              <select id="ai-model-select" class="form-select bg-dark text-white border-secondary border-opacity-50 mono" style="color-scheme: dark;">
+                <option value="">—</option>
+                {% for m in (ai_models or []) %}
+                  <option value="{{ m.model_id }}" {% if (settings.ai_model or '') == (m.model_id or '') %}selected{% endif %}>
+                    {% if (m.title or '') and (m.title != m.model_id) %}
+                      {{ m.title }} — {{ m.model_id }}
+                    {% else %}
+                      {{ m.model_id }}
+                    {% endif %}
+                  </option>
+                {% endfor %}
+                <option value="__custom__">Пользовательская…</option>
+              </select>
+              <div class="mt-2" id="ai-model-custom-wrap" style="display:none;">
+                <label class="form-label mono text-secondary smaller mb-1">ПОЛЬЗОВАТЕЛЬСКАЯ_MODEL_ID</label>
+                <input id="ai-model-custom-input" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" placeholder="например: qwen/qwen3.6-plus">
+                <div class="mt-2">
+                  <label class="form-label mono text-secondary smaller mb-1">НАЗВАНИЕ</label>
+                  <input id="ai-model-custom-title" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" placeholder="Qwen 3.6 Plus">
+                </div>
+                <div class="mt-2">
+                  <label class="form-label mono text-secondary smaller mb-1">КОНТЕКСТ</label>
+                  <div class="row g-2">
+                    <div class="col-md-4">
+                      <input id="ai-model-custom-context" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" maxlength="10" placeholder="262K / 1M">
+                    </div>
+                    <div class="col-md-4">
+                      <input id="ai-model-custom-price-in" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" inputmode="decimal" placeholder="вход за 1M">
+                    </div>
+                    <div class="col-md-4">
+                      <input id="ai-model-custom-price-out" class="form-control bg-dark text-white border-secondary border-opacity-50 mono" inputmode="decimal" placeholder="исход за 1M">
+                    </div>
+                  </div>
+                </div>
+                <div class="d-flex gap-2 mt-2 flex-wrap">
+                  <button type="button" id="ai-model-custom-upload" class="btn btn-outline-info mono">ДОБАВИТЬ_В_СПРАВОЧНИК</button>
+                  <div id="ai-model-custom-upload-msg" class="mono small text-secondary" style="min-height: 1.1rem;"></div>
+                </div>
+              </div>
+              <div class="form-text text-secondary mono smaller">
+                Выбор из справочника сохраняется как текущая модель и используется в следующих запросах.
+              </div>
+              <div id="ai-model-select-msg" class="mono small" style="min-height: 1.1rem;"></div>
+            </div>
+
+            <div class="row mb-4">
+              <div class="col-md-6 mb-3 mb-md-0">
+                <label class="form-label mono text-secondary smaller">{{ form.ai_site_url.label | upper }}</label>
+                {{ form.ai_site_url(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="https://ваш_сайт") }}
+              </div>
+              <div class="col-md-6">
+                <label class="form-label mono text-secondary smaller">{{ form.ai_app_name.label | upper }}</label>
+                {{ form.ai_app_name(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="DIAGNOST.ADMIN") }}
+              </div>
+            </div>
+
+            <div class="d-grid">
+              <button type="submit" class="btn btn-info mono py-2 shadow-sm">
+                <i class="bi bi-save me-2"></i>СОХРАНИТЬ.SH
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-5">
+      <div class="card bg-dark neon-border-blue shadow-lg">
+        <div class="card-header border-secondary border-opacity-25 bg-transparent py-3">
+          <h5 class="card-title m-0 mono text-white small">
+            <i class="bi bi-info-circle me-2"></i>ПОДСКАЗКИ
+          </h5>
+        </div>
+        <div class="card-body mono small text-secondary">
+          <div class="mb-3">
+            <div class="text-white mb-1">Где используется</div>
+            <div>Кнопки «ИИ_АНАЛИЗ» в заявке и в заказ‑наряде.</div>
+          </div>
+          <div class="mb-3">
+            <div class="text-white mb-1">Безопасность</div>
+            <div>Ключ хранится в базе и доступен только администратору.</div>
+          </div>
+          <div class="mb-3">
+            <div class="text-white mb-1">SITE URL и APP NAME</div>
+            <div class="mb-2">
+              <span class="text-white">SITE URL</span> — публичный адрес сайта (например <span class="text-info">https://diagnostpro.ru</span>).
+              Используется как заголовок <span class="text-white">HTTP-Referer</span> для router.ai/OpenRouter.
+            </div>
+            <div>
+              <span class="text-white">APP NAME</span> — название приложения (например <span class="text-info">DIAGNOST.PRO</span>).
+              Отправляется как заголовок <span class="text-white">X-Title</span> (для идентификации проекта у провайдера).
+            </div>
+          </div>
+          <div class="mb-0">
+            <div class="text-white mb-1">Переключение “сетей”</div>
+            <div>Выбирайте модель из справочника (или укажите пользовательскую) — это и есть выбор сети/модели.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const select = document.getElementById('ai-model-select');
+    if (!select) return;
+    const customWrap = document.getElementById('ai-model-custom-wrap');
+    const customInput = document.getElementById('ai-model-custom-input');
+    const customTitle = document.getElementById('ai-model-custom-title');
+    const customContext = document.getElementById('ai-model-custom-context');
+    const customPriceIn = document.getElementById('ai-model-custom-price-in');
+    const customPriceOut = document.getElementById('ai-model-custom-price-out');
+    const customUploadBtn = document.getElementById('ai-model-custom-upload');
+    const customUploadMsg = document.getElementById('ai-model-custom-upload-msg');
+    const saveUrl = {{ url_for('admin.ai_model_current_json')|tojson }};
+    const uploadUrl = {{ url_for('admin.ai_models_save_json')|tojson }};
+    const csrfToken = '{{ csrf_token() }}';
+    const msg = document.getElementById('ai-model-select-msg');
+    const currentModel = {{ (settings.ai_model or '')|tojson }};
+    const activeModels = new Set(
+      ({{ (ai_models or [])|tojson }}).map((m) => String(m.model_id || ''))
+    );
+
+    function setMsg(t, err) {
+      if (!msg) return;
+      msg.textContent = t || '';
+      msg.classList.toggle('text-danger', !!err);
+      msg.classList.toggle('text-success', !err && !!t);
+      msg.classList.toggle('text-secondary', !t);
+    }
+
+    function refreshCustomMode() {
+      const isCustom = String(select.value || '') === '__custom__';
+      if (customWrap) customWrap.style.display = isCustom ? '' : 'none';
+      if (isCustom && customInput && !customInput.value) customInput.value = currentModel || '';
+    }
+
+    // init: if current model is not in catalog -> custom mode
+    if (currentModel && !activeModels.has(String(currentModel))) {
+      select.value = '__custom__';
+      if (customInput) customInput.value = currentModel;
+    }
+    refreshCustomMode();
+
+    async function save(modelId, isCustom) {
+      setMsg('Сохранение...', false);
+      try {
+        const r = await fetch(saveUrl, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+          body: JSON.stringify({ model_id: modelId, is_custom: !!isCustom }),
+        });
+        const d = await r.json().catch(() => null);
+        if (!r.ok || !d || !d.ok) throw new Error((d && d.message) || 'Ошибка');
+        setMsg('Текущая модель обновлена', false);
+        setTimeout(() => setMsg('', false), 1200);
+      } catch (e) {
+        setMsg(e.message || 'Ошибка', true);
+      }
+    }
+
+    function setUploadMsg(t, err) {
+      if (!customUploadMsg) return;
+      customUploadMsg.textContent = t || '';
+      customUploadMsg.classList.toggle('text-danger', !!err);
+      customUploadMsg.classList.toggle('text-success', !err && !!t);
+      customUploadMsg.classList.toggle('text-secondary', !t);
+    }
+
+    async function postJson(url, payload) {
+      const r = await fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+        body: JSON.stringify(payload || {}),
+      });
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d || !d.ok) throw new Error((d && d.message) || 'Ошибка');
+      return d;
+    }
+
+    select.addEventListener('change', async () => {
+      refreshCustomMode();
+      const v = String(select.value || '');
+      if (v === '__custom__') return; // wait for explicit input
+      await save(v, false);
+    });
+
+    if (customInput) {
+      customInput.addEventListener('change', async () => {
+        if (String(select.value || '') !== '__custom__') return;
+        const v = String(customInput.value || '').trim();
+        await save(v, true);
+      });
+      customInput.addEventListener('keydown', async (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        if (String(select.value || '') !== '__custom__') return;
+        const v = String(customInput.value || '').trim();
+        await save(v, true);
+      });
+    }
+
+    if (customUploadBtn) {
+      customUploadBtn.addEventListener('click', async () => {
+        if (String(select.value || '') !== '__custom__') return;
+        const modelId = String((customInput && customInput.value) || '').trim();
+        const title = String((customTitle && customTitle.value) || '').trim();
+        if (!modelId || !title) {
+          setUploadMsg('Заполните model_id и название.', true);
+          return;
+        }
+        setUploadMsg('Загрузка...', false);
+        try {
+          await postJson(uploadUrl, {
+            title,
+            model_id: modelId,
+            context: customContext ? customContext.value : '',
+            price_in_per_1m: customPriceIn ? customPriceIn.value : '',
+            price_out_per_1m: customPriceOut ? customPriceOut.value : '',
+            is_active: true,
+          });
+          // after catalog save -> set as current catalog model
+          await save(modelId, false);
+          setUploadMsg('Добавлено в справочник', false);
+          setTimeout(() => setUploadMsg('', false), 1200);
+        } catch (e) {
+          setUploadMsg(e.message || 'Ошибка', true);
+        }
+      });
+    }
+  })();
+</script>
+{% endblock %}
+

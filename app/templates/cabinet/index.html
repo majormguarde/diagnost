@@ -134,6 +134,7 @@
                     {% if appt.car_number or appt.car_year %}
                     <div class="text-secondary smaller">{{ appt.car_year or '' }} {{ appt.car_number or '' }}</div>
                     {% endif %}
+                    <div id="cabinet-appt-vehicle-summary-{{ appt.id }}" class="text-secondary smaller" style="display:none;"></div>
                     {% if appt.win_number %}
                     <div class="text-secondary smaller mono">WIN: {{ appt.win_number }}</div>
                     {% endif %}
@@ -240,7 +241,7 @@
 <script>
 (function () {
   const syncUrl = {{ url_for('cabinet.appointments_status_json')|tojson }};
-  const pollMs = 10000;
+  const pollMs = 5000;
   let timer = null;
   async function sync() {
     try {
@@ -280,6 +281,13 @@
             timeEl.appendChild(span);
           }
         }
+
+        const vehEl = document.getElementById('cabinet-appt-vehicle-summary-' + a.id);
+        if (vehEl && a.vehicle_summary !== undefined) {
+          const s = String(a.vehicle_summary || '').trim();
+          vehEl.textContent = s;
+          vehEl.style.display = s ? '' : 'none';
+        }
       });
     } catch (e) {}
   }
@@ -287,9 +295,22 @@
     if (timer) clearInterval(timer);
     timer = setInterval(sync, pollMs);
   }
+  function stop() {
+    if (timer) clearInterval(timer);
+    timer = null;
+  }
+  function forceSync() {
+    sync();
+    if (!timer) start();
+  }
+
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) sync();
+    if (document.hidden) stop();
+    else forceSync();
   });
+  window.addEventListener('focus', forceSync);
+  window.addEventListener('pageshow', forceSync);
+
   start();
   sync();
 })();

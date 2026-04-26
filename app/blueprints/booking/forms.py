@@ -1,5 +1,5 @@
 from flask_wtf import FlaskForm
-from wtforms import DateField, IntegerField, SelectField, SelectMultipleField, StringField, SubmitField, TextAreaField
+from wtforms import DateField, IntegerField, SelectField, SelectMultipleField, StringField, SubmitField, TextAreaField, FloatField
 from wtforms.validators import DataRequired, InputRequired, Length, Optional
 from wtforms import ValidationError
 
@@ -15,6 +15,30 @@ class BookingStep1Form(FlaskForm):
     car_year = IntegerField("Год выпуска", validators=[Optional()])
     car_number = StringField("Гос.номер", validators=[Optional()])
     win_number = StringField("WIN номер", validators=[Optional(), Length(max=32)])
+    engine_type = SelectField(
+        "Тип двигателя",
+        choices=[("", "—"), ("petrol", "Бензин"), ("diesel", "Дизель")],
+        validators=[Optional()],
+    )
+    has_turbo = SelectField(
+        "Турбина",
+        choices=[("", "—"), ("yes", "Да"), ("no", "Нет")],
+        validators=[Optional()],
+    )
+    engine_volume_l = FloatField("Объем двигателя (л)", validators=[Optional()])
+    transmission_type = SelectField(
+        "Тип КПП",
+        choices=[
+            ("", "—"),
+            ("manual", "Механика"),
+            ("auto", "Автомат"),
+            ("robot", "Робот"),
+            ("cvt", "Вариатор"),
+            ("other", "Другое"),
+        ],
+        validators=[Optional()],
+    )
+    mileage_km = IntegerField("Пробег (км)", validators=[Optional()])
     
     # Описание проблемы (вместо выбора работ)
     problem_description = TextAreaField("Описание неисправностей", validators=[DataRequired(message="Опишите проблему")])

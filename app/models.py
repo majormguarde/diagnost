@@ -130,6 +130,11 @@ class Appointment(db.Model):
     car_year = db.Column(db.Integer, nullable=True)
     car_number = db.Column(db.String(20), nullable=True)
     win_number = db.Column(db.String(32), nullable=True)
+    engine_type = db.Column(db.String(16), nullable=True)  # petrol/diesel
+    has_turbo = db.Column(db.Boolean, nullable=True)
+    engine_volume_l = db.Column(db.Float, nullable=True)
+    transmission_type = db.Column(db.String(24), nullable=True)  # manual/auto/robot/cvt/other
+    mileage_km = db.Column(db.Integer, nullable=True)
     problem_description = db.Column(db.Text, nullable=True)
 
     start_at = db.Column(db.DateTime, nullable=False, index=True)
@@ -150,6 +155,9 @@ class Appointment(db.Model):
     )
     issue_media = db.relationship(
         "AppointmentIssueMedia", back_populates="appointment", cascade="all, delete-orphan"
+    )
+    documents = db.relationship(
+        "AppointmentDocument", back_populates="appointment", cascade="all, delete-orphan"
     )
 
     def problem_items(self) -> list[str]:
@@ -449,6 +457,20 @@ class WorkOrderDocument(db.Model):
     work_order = db.relationship("WorkOrder", back_populates="documents")
 
 
+class AppointmentDocument(db.Model):
+    __tablename__ = "appointment_documents"
+
+    id = db.Column(db.Integer, primary_key=True)
+    appointment_id = db.Column(db.Integer, db.ForeignKey("appointments.id"), nullable=False, index=True)
+    filename = db.Column(db.String(255), nullable=False)
+    mime = db.Column(db.String(100), nullable=False)
+    storage_path = db.Column(db.String(500), nullable=False)
+    size_bytes = db.Column(db.Integer, nullable=False)
+    uploaded_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    appointment = db.relationship("Appointment", back_populates="documents")
+
+
 class TelegramLinkToken(db.Model):
     __tablename__ = "telegram_link_tokens"
 
@@ -502,6 +524,16 @@ class OrganizationSettings(db.Model):
     # СБП (оплата по QR/по телефону)
     sbp_phone = db.Column(db.String(32), nullable=True)
 
+    # AI assistant (admin-only)
+    ai_provider = db.Column(db.String(32), nullable=True)  # e.g. openrouter / openai / custom
+    ai_base_url = db.Column(db.String(255), nullable=True)  # OpenAI-compatible base URL
+    ai_api_key = db.Column(db.String(255), nullable=True)  # stored as plain text (admin only)
+    ai_model = db.Column(db.String(120), nullable=True)  # model id, e.g. qwen/qwen3.6-plus
+    ai_site_url = db.Column(db.String(255), nullable=True)  # optional: referer header for router.ai
+    ai_app_name = db.Column(db.String(120), nullable=True)  # optional: title header for router.ai
+    ai_default_prompt_template_id_appt = db.Column(db.Integer, nullable=True)
+    ai_default_prompt_template_id_wo = db.Column(db.Integer, nullable=True)
+
     @classmethod
     def get_settings(cls):
         settings = db.session.execute(db.select(cls)).scalar()
@@ -510,6 +542,65 @@ class OrganizationSettings(db.Model):
             db.session.add(settings)
             db.session.commit()
         return settings
+
+
+class AiPromptTemplate(db.Model):
+    __tablename__ = "ai_prompt_templates"
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(160), nullable=False)
+    body_md = db.Column(db.Text, nullable=False)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AiModel(db.Model):
+    __tablename__ = "ai_models"
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(160), nullable=False)
+    model_id = db.Column(db.String(120), nullable=False, unique=True)
+    context = db.Column(db.String(10), nullable=True)
+    price_in_per_1m = db.Column(db.Float, nullable=True)
+    price_out_per_1m = db.Column(db.Float, nullable=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AiRequestLog(db.Model):
+    __tablename__ = "ai_request_logs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    appointment_id = db.Column(db.Integer, db.ForeignKey("appointments.id"), nullable=True, index=True)
+    work_order_id = db.Column(db.Integer, db.ForeignKey("work_orders.id"), nullable=True, index=True)
+    template_id = db.Column(db.Integer, db.ForeignKey("ai_prompt_templates.id"), nullable=True, index=True)
+    model = db.Column(db.String(120), nullable=True)
+    prompt_md = db.Column(db.Text, nullable=True)
+    messages_json = db.Column(db.Text, nullable=True)
+    answer_text = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+    appointment = db.relationship("Appointment", foreign_keys=[appointment_id])
+    work_order = db.relationship("WorkOrder", foreign_keys=[work_order_id])
+    template = db.relationship("AiPromptTemplate", foreign_keys=[template_id])
+
+
+class AppointmentAiQuestion(db.Model):
+    __tablename__ = "appointment_ai_questions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    appointment_id = db.Column(db.Integer, db.ForeignKey("appointments.id"), nullable=False, index=True)
+    ai_request_log_id = db.Column(db.Integer, db.ForeignKey("ai_request_logs.id"), nullable=True, index=True)
+    question = db.Column(db.Text, nullable=False)
+    options_json = db.Column(db.Text, nullable=False, default="[]")  # JSON array of strings
+    client_answer = db.Column(db.Text, nullable=True)  # selected option (or free text in future)
+    answered_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+    appointment = db.relationship("Appointment", foreign_keys=[appointment_id])
+    ai_request = db.relationship("AiRequestLog", foreign_keys=[ai_request_log_id])
 
 class Banner(db.Model):
     __tablename__ = "banners"

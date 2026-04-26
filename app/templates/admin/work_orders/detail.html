@@ -42,8 +42,11 @@
         <!-- Жалобы клиента -->
         <div class="col-md-6">
           <div class="card h-100 bg-dark neon-border-blue shadow-lg">
-            <div class="card-header border-secondary border-opacity-25 bg-transparent py-3">
+            <div class="card-header border-secondary border-opacity-25 bg-transparent py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
               <h5 class="card-title m-0 mono text-white small"><i class="bi bi-chat-left-dots me-2"></i>ЖАЛОБЫ_КЛИЕНТА</h5>
+              <button type="button" class="btn btn-sm btn-outline-info mono" data-bs-toggle="modal" data-bs-target="#aiChatModal">
+                <i class="bi bi-stars me-1"></i>ИИ_АНАЛИЗ
+              </button>
             </div>
             <div class="card-body p-4">
               <div class="p-3 bg-dark bg-opacity-50 border border-secondary border-opacity-25 rounded mono small text-white">
@@ -1362,6 +1365,16 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 </script>
+
+{% set modal_id = "aiChatModal" %}
+{% set title = "ИИ_АНАЛИЗ_ЗАКАЗ_НАРЯДА" %}
+{% set api_url = url_for('admin.work_order_ai_analyze_json', order_id=order.id) %}
+{% set save_url = url_for('admin.work_order_ai_chat_save_md_json', order_id=order.id) %}
+{% set csrf_token_value = csrf_token() %}
+{% set _pts_json = (prompt_templates_json or [])|tojson %}
+{% set ai_kind = "work_order" %}
+{% set ai_object_id = order.id %}
+{% include "admin/_ai_chat_modal.html" %}
 
 <style>
 .neon-border-blue-hover:hover {

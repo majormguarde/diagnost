@@ -1,0 +1,467 @@
+{# Shared fullscreen AI chat modal (admin-only) #}
+{# Required variables: modal_id, title, api_url, save_url, csrf_token_value #}
+<div class="modal fade" id="{{ modal_id }}" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-fullscreen modal-dialog-scrollable">
+    <div class="modal-content bg-dark neon-border-blue">
+      <div class="modal-header border-secondary border-opacity-25">
+        <h5 class="modal-title mono text-white">
+          <i class="bi bi-stars me-2"></i>{{ title }}
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-lg-4">
+            <div class="ai-chat-left-col">
+              {% set _pts = prompt_templates if prompt_templates is defined else [] %}
+              <div class="mb-2 mono text-secondary small">ШАБЛОН</div>
+              <div class="input-group mb-2">
+                <select data-ai="tpl" class="form-select bg-dark text-white border-secondary border-opacity-50 mono small">
+                  <option value="">— выбрать —</option>
+                  {% for t in _pts %}
+                    {% set _def = (org_settings.ai_default_prompt_template_id_appt if ai_kind == 'appointment' else org_settings.ai_default_prompt_template_id_wo) if org_settings is defined else None %}
+                    <option value="{{ t.id }}" {% if _def and (t.id == _def) %}selected{% endif %}>{{ t.title }}</option>
+                  {% endfor %}
+                </select>
+                <button type="button" data-ai="tplApply" class="btn btn-outline-info mono">ПРИМЕНИТЬ</button>
+              </div>
+              <div class="mb-2 mono text-secondary small">СИСТЕМНЫЙ ПРОМПТ / КОНТЕКСТ</div>
+              <textarea data-ai="prompt" class="form-control bg-dark text-white border-secondary border-opacity-50 mono small" rows="14"></textarea>
+              <div class="d-flex flex-wrap gap-2 mt-2">
+                <button type="button" data-ai="build" class="btn btn-outline-secondary mono">СФОРМИРОВАТЬ</button>
+                <button type="button" data-ai="save" class="btn btn-outline-warning mono">
+                  <i class="bi bi-file-earmark-text me-1"></i>СОХРАНИТЬ_КАК_MD
+                </button>
+                <button type="button" data-ai="history" class="btn btn-outline-light mono">
+                  <i class="bi bi-clock-history me-1"></i>ИСТОРИЯ
+                </button>
+                <button type="button" data-ai="tplSave" class="btn btn-outline-success mono">
+                  <i class="bi bi-bookmark-plus me-1"></i>В_ШАБЛОН
+                </button>
+                <div class="d-flex align-items-center flex-grow-1 gap-2">
+                  <span class="badge border border-secondary text-secondary bg-secondary bg-opacity-10 border-opacity-25 mono small">
+                    model: <span data-ai="model">{{ (org_settings.ai_model if org_settings is defined else "") or "—" }}</span>
+                  </span>
+                  <div data-ai="status" class="text-secondary mono small d-flex align-items-center"></div>
+                </div>
+              </div>
+              <hr class="border-secondary border-opacity-25 my-3">
+              <div class="mb-2 mono text-secondary small">СООБЩЕНИЕ</div>
+              <textarea data-ai="userInput" class="form-control bg-dark text-white border-secondary border-opacity-50 mono small ai-chat-user-input" rows="5" placeholder="Введите вопрос/уточнение..."></textarea>
+              <div class="d-grid mt-2">
+                <button type="button" data-ai="run" class="btn btn-info mono fw-bold">
+                  <i class="bi bi-send me-2"></i>ОТПРАВИТЬ
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="col-lg-8">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div class="mono text-secondary small">ЧАТ</div>
+              <button type="button" data-ai="copy" class="btn btn-sm btn-outline-info mono">
+                <i class="bi bi-clipboard me-1"></i>КОПИЯ
+              </button>
+            </div>
+            <div data-ai="chat" class="p-3 rounded border border-secondary border-opacity-25 bg-dark bg-opacity-50" style="height: calc(100vh - 210px); overflow:auto;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer border-secondary border-opacity-25">
+        <button type="button" class="btn btn-outline-secondary mono" data-bs-dismiss="modal">Закрыть</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- History modal -->
+<div class="modal fade" id="{{ modal_id }}History" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable modal-dialog-centered">
+    <div class="modal-content bg-dark neon-border-blue">
+      <div class="modal-header border-secondary border-opacity-25">
+        <h5 class="modal-title mono text-white"><i class="bi bi-clock-history me-2"></i>ИСТОРИЯ_ЗАПРОСОВ</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-lg-5">
+            <div class="mono text-secondary small mb-2">СПИСОК</div>
+            <div id="{{ modal_id }}HistoryList" class="list-group list-group-flush border border-secondary border-opacity-25 rounded overflow-hidden"></div>
+          </div>
+          <div class="col-lg-7">
+            <div class="mono text-secondary small mb-2">ПРОМПТ</div>
+            <pre id="{{ modal_id }}HistoryPrompt" class="p-3 rounded border border-secondary border-opacity-25 bg-dark bg-opacity-50 text-white mono small" style="white-space:pre-wrap; min-height: 10rem; max-height: 30vh; overflow:auto;"></pre>
+            <div class="mono text-secondary small mb-2 mt-3">ОТВЕТ</div>
+            <pre id="{{ modal_id }}HistoryAnswer" class="p-3 rounded border border-secondary border-opacity-25 bg-dark bg-opacity-50 text-white mono small" style="white-space:pre-wrap; min-height: 10rem; max-height: 35vh; overflow:auto;"></pre>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer border-secondary border-opacity-25">
+        <button type="button" class="btn btn-outline-secondary mono" data-bs-dismiss="modal">Закрыть</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const modalEl = document.getElementById({{ modal_id|tojson }});
+    if (!modalEl) return;
+    const csrfToken = {{ csrf_token_value|tojson }};
+    const apiUrl = {{ api_url|tojson }};
+    const saveUrl = {{ save_url|tojson }};
+
+    const promptEl = modalEl.querySelector('[data-ai="prompt"]');
+    const chatEl = modalEl.querySelector('[data-ai="chat"]');
+    const statusEl = modalEl.querySelector('[data-ai="status"]');
+    const modelEl = modalEl.querySelector('[data-ai="model"]');
+    const tplSelect = modalEl.querySelector('[data-ai="tpl"]');
+    const tplApplyBtn = modalEl.querySelector('[data-ai="tplApply"]');
+    const buildBtn = modalEl.querySelector('[data-ai="build"]');
+    const runBtn = modalEl.querySelector('[data-ai="run"]');
+    const copyBtn = modalEl.querySelector('[data-ai="copy"]');
+    const userInputEl = modalEl.querySelector('[data-ai="userInput"]');
+    const saveBtn = modalEl.querySelector('[data-ai="save"]');
+    const tplSaveBtn = modalEl.querySelector('[data-ai="tplSave"]');
+    const historyBtn = modalEl.querySelector('[data-ai="history"]');
+
+    const historyModalEl = document.getElementById({{ (modal_id ~ "History")|tojson }});
+    const historyListEl = document.getElementById({{ (modal_id ~ "HistoryList")|tojson }});
+    const historyPromptEl = document.getElementById({{ (modal_id ~ "HistoryPrompt")|tojson }});
+    const historyAnswerEl = document.getElementById({{ (modal_id ~ "HistoryAnswer")|tojson }});
+
+    const aiKind = {{ ai_kind|tojson }};
+    const aiObjectId = {{ ai_object_id|tojson }};
+    const historyUrlBase = {{ url_for('admin.ai_requests_json')|tojson }};
+
+    let messages = [];
+
+    const templatesById = (function () {
+      try {
+        return {{ _pts_json|safe }};
+      } catch (e) { return []; }
+    })();
+    const tplMap = {};
+    (templatesById || []).forEach((t) => { if (t && t.id != null) tplMap[String(t.id)] = t; });
+
+    function setStatus(t, isErr) {
+      if (!statusEl) return;
+      statusEl.textContent = t || '';
+      statusEl.classList.toggle('text-danger', !!isErr);
+      statusEl.classList.toggle('text-secondary', !isErr);
+    }
+
+    async function postJson(url, body) {
+      const r = await fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken,
+          'X-CSRF-Token': csrfToken,
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: JSON.stringify(body || {})
+      });
+      let d = null;
+      try {
+        d = await r.json();
+      } catch (e) {
+        const txt = await r.text().catch(() => '');
+        throw new Error(`Ответ сервера не JSON (HTTP ${r.status}). ${txt ? txt.slice(0, 160) : ''}`.trim());
+      }
+      if (!r.ok || !d || !d.ok) throw new Error((d && d.message) || `Ошибка (HTTP ${r.status})`);
+      return d;
+    }
+
+    function renderChat() {
+      if (!chatEl) return;
+      const out = [];
+      (messages || []).filter((m) => (m && m.role) !== 'system').forEach((m) => {
+        const role = m.role || 'assistant';
+        const who = role === 'user' ? 'Вы' : 'ИИ';
+        const cls = role === 'user' ? 'border-info' : 'border-success';
+        const text = String(m.content || '');
+        out.push(
+          '<div class="mb-3 p-3 rounded border ' + cls + ' bg-dark bg-opacity-50">' +
+            '<div class="mono small text-secondary mb-2">' + who + '</div>' +
+            '<div class="mono small text-white" style="white-space:pre-wrap;">' +
+              text.replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) +
+            '</div>' +
+          '</div>'
+        );
+      });
+      chatEl.innerHTML = out.join('') || '<div class="text-secondary mono small">Нет сообщений.</div>';
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    async function rememberDefaultTemplate(tplId) {
+      const id = tplId ? String(tplId) : '';
+      if (!id) return;
+      try {
+        await postJson({{ url_for('admin.ai_default_template_json')|tojson }}, { kind: {{ ai_kind|tojson }}, template_id: id });
+      } catch (e) {}
+    }
+
+    async function buildPrompt() {
+      setStatus('Формирование...', false);
+      const tplId = (tplSelect && tplSelect.value) ? tplSelect.value : null;
+      await rememberDefaultTemplate(tplId);
+      const d = await postJson(apiUrl, { mode: 'prompt', template_id: tplId });
+      if (promptEl) promptEl.value = d.prompt || '';
+      // По кнопке «Сформировать» показываем итоговый промпт как сообщение (для отправки).
+      if (userInputEl) userInputEl.value = d.prompt || '';
+      messages = [{ role: 'system', content: (promptEl && promptEl.value) ? String(promptEl.value) : (d.prompt || '') }];
+      renderChat();
+      setStatus('OK', false);
+      window.setTimeout(() => setStatus('', false), 800);
+    }
+
+    async function runAi() {
+      const sys = (promptEl && promptEl.value) ? String(promptEl.value) : '';
+      if (!sys.trim()) await buildPrompt();
+
+      const userText = (userInputEl && userInputEl.value) ? String(userInputEl.value) : '';
+      if (!userText.trim()) {
+        setStatus('Введите сообщение.', true);
+        return;
+      }
+      await rememberDefaultTemplate((tplSelect && tplSelect.value) ? tplSelect.value : null);
+      if (runBtn) runBtn.disabled = true;
+      setStatus('Запрос к ИИ...', false);
+      try {
+        if (!messages.length) messages = [{ role: 'system', content: sys }];
+        messages.push({ role: 'user', content: userText });
+        if (userInputEl) userInputEl.value = '';
+        renderChat();
+
+        const d = await postJson(apiUrl, { mode: 'run', messages, template_id: (tplSelect && tplSelect.value) ? tplSelect.value : null });
+        messages.push({ role: 'assistant', content: d.answer || '' });
+        renderChat();
+        if (modelEl && d && d.model) modelEl.textContent = String(d.model);
+        setStatus(d.model ? ('OK · ' + d.model) : 'OK', false);
+      } finally {
+        if (runBtn) runBtn.disabled = false;
+      }
+    }
+
+    async function saveMd() {
+      if (!messages.length) {
+        setStatus('Сначала получите ответ.', true);
+        return;
+      }
+      if (saveBtn) saveBtn.disabled = true;
+      setStatus('Сохранение...', false);
+      try {
+        const d = await postJson(saveUrl, { messages });
+        setStatus('Сохранено', false);
+        if (d && d.download_url) window.open(d.download_url, '_blank');
+        window.setTimeout(() => setStatus('', false), 1200);
+      } catch (e) {
+        setStatus(e.message || 'Ошибка сохранения', true);
+      } finally {
+        if (saveBtn) saveBtn.disabled = false;
+      }
+    }
+
+    async function applyTemplateById(id) {
+      const t = tplMap[String(id || '')];
+      if (!t) {
+        setStatus('Шаблон не найден.', true);
+        return;
+      }
+      setStatus('Применение...', false);
+      try {
+        await postJson({{ url_for('admin.ai_default_template_json')|tojson }}, { kind: {{ ai_kind|tojson }}, template_id: t.id });
+      } catch (e) {
+        setStatus(e.message || 'Ошибка', true);
+        return;
+      }
+      try {
+        const d = await postJson(apiUrl, { mode: 'prompt', template_id: t.id });
+        if (promptEl) promptEl.value = d.prompt || String(t.body_md || '');
+        messages = [{ role: 'system', content: String(promptEl.value || '') }];
+        renderChat();
+        setStatus('Шаблон применён', false);
+        window.setTimeout(() => setStatus('', false), 900);
+      } catch (e) {
+        if (promptEl) promptEl.value = String(t.body_md || '');
+        messages = [{ role: 'system', content: String(promptEl.value || '') }];
+        renderChat();
+        setStatus('Шаблон применён', false);
+      }
+    }
+
+    async function saveTemplateFromPrompt() {
+      const txt = (promptEl && promptEl.value) ? String(promptEl.value) : '';
+      if (!txt.trim()) {
+        setStatus('Промпт пуст.', true);
+        return;
+      }
+      const title = window.prompt('Название шаблона:', 'Новый шаблон');
+      if (!title || !String(title).trim()) return;
+      setStatus('Сохранение шаблона...', false);
+      const d = await postJson({{ url_for('admin.ai_prompt_template_create_json')|tojson }}, { title: String(title).trim(), body_md: txt });
+      // refresh list in select
+      if (tplSelect && d && d.templates) {
+        tplSelect.innerHTML = '<option value="">— выбрать —</option>' + d.templates.map((x) => `<option value="${x.id}">${String(x.title || '').replace(/[&<>]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</option>`).join('');
+      }
+      // update local map too
+      if (d && d.templates) {
+        Object.keys(tplMap).forEach((k) => { delete tplMap[k]; });
+        d.templates.forEach((t) => { tplMap[String(t.id)] = t; });
+      }
+      setStatus('Шаблон сохранён', false);
+      window.setTimeout(() => setStatus('', false), 1200);
+    }
+
+    if (buildBtn) buildBtn.addEventListener('click', () => buildPrompt().catch((e) => setStatus(e.message, true)));
+    if (runBtn) runBtn.addEventListener('click', () => runAi().catch((e) => setStatus(e.message, true)));
+    if (saveBtn) saveBtn.addEventListener('click', () => saveMd().catch((e) => setStatus(e.message, true)));
+    if (tplApplyBtn) tplApplyBtn.addEventListener('click', () => applyTemplateById(tplSelect ? tplSelect.value : '').catch((e) => setStatus(e.message, true)));
+    if (tplSaveBtn) tplSaveBtn.addEventListener('click', () => saveTemplateFromPrompt().catch((e) => setStatus(e.message, true)));
+    if (copyBtn) copyBtn.addEventListener('click', async () => {
+      const text = (messages || []).map((m) => `${m.role}: ${m.content}`).join('\n\n');
+      try {
+        await navigator.clipboard.writeText(text);
+        setStatus('Скопировано', false);
+        window.setTimeout(() => setStatus('', false), 800);
+      } catch (e) {
+        setStatus('Не удалось скопировать', true);
+      }
+    });
+
+    modalEl.addEventListener('shown.bs.modal', () => {
+      if (promptEl && !String(promptEl.value || '').trim()) {
+        buildPrompt().catch(() => {});
+      }
+    });
+
+    function fmtTs(iso) {
+      if (!iso) return '';
+      try {
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return iso;
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${pad(d.getDate())}.${pad(d.getMonth()+1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      } catch (e) { return iso; }
+    }
+
+    function esc(s) {
+      return String(s || '').replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    }
+
+    async function loadHistory() {
+      if (!historyListEl || !historyPromptEl || !historyAnswerEl) return;
+      historyListEl.innerHTML = '<div class="list-group-item bg-dark text-secondary mono small">Загрузка...</div>';
+      historyPromptEl.textContent = '';
+      historyAnswerEl.textContent = '';
+      const qs = new URLSearchParams();
+      if (aiKind === 'appointment') qs.set('appointment_id', String(aiObjectId));
+      if (aiKind === 'work_order') qs.set('work_order_id', String(aiObjectId));
+      const url = historyUrlBase + '?' + qs.toString();
+      const r = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d || !d.ok) {
+        historyListEl.innerHTML = '<div class="list-group-item bg-dark text-danger mono small">Ошибка загрузки.</div>';
+        return;
+      }
+      const rows = d.rows || [];
+      if (!rows.length) {
+        historyListEl.innerHTML = '<div class="list-group-item bg-dark text-secondary mono small">Пусто.</div>';
+        return;
+      }
+      historyListEl.innerHTML = rows.map((x, idx) => {
+        const t = esc(x.template_title || '');
+        const model = esc(x.model || '');
+        const ts = esc(fmtTs(x.created_at || ''));
+        return `<button type="button" class="list-group-item list-group-item-action bg-dark text-white border-secondary border-opacity-25 mono small js-ai-hrow" data-idx="${idx}">
+          <div class="d-flex justify-content-between gap-2">
+            <span>${ts}</span>
+            <span class="text-secondary">${model}</span>
+          </div>
+          <div class="text-secondary smaller">${t ? ('шаблон: ' + t) : ''}</div>
+        </button>`;
+      }).join('');
+
+      function show(i) {
+        const x = rows[i];
+        if (!x) return;
+        historyPromptEl.textContent = x.prompt_md || '';
+        historyAnswerEl.textContent = x.answer_text || '';
+        historyListEl.querySelectorAll('.js-ai-hrow.active').forEach((b) => b.classList.remove('active'));
+        const btn = historyListEl.querySelector(`.js-ai-hrow[data-idx="${i}"]`);
+        if (btn) btn.classList.add('active');
+      }
+      historyListEl.addEventListener('click', (e) => {
+        const b = e.target.closest('.js-ai-hrow');
+        if (!b) return;
+        show(Number(b.getAttribute('data-idx') || '0'));
+      }, { once: true });
+      show(0);
+    }
+
+    async function loadHistoryRows() {
+      const qs = new URLSearchParams();
+      if (aiKind === 'appointment') qs.set('appointment_id', String(aiObjectId));
+      if (aiKind === 'work_order') qs.set('work_order_id', String(aiObjectId));
+      const url = historyUrlBase + '?' + qs.toString();
+      const r = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d || !d.ok) throw new Error((d && d.message) || 'Ошибка истории');
+      return Array.isArray(d.rows) ? d.rows : [];
+    }
+
+    async function loadHistoryIntoChat() {
+      setStatus('Загрузка истории...', false);
+      const rows = await loadHistoryRows();
+      if (!rows.length) {
+        setStatus('История пуста', false);
+        window.setTimeout(() => setStatus('', false), 900);
+        return;
+      }
+      const sys = (promptEl && promptEl.value) ? String(promptEl.value) : '';
+      const newMessages = [];
+      if (sys.trim()) newMessages.push({ role: 'system', content: sys });
+      // oldest -> newest
+      rows.slice().reverse().forEach((x) => {
+        const ts = fmtTs(x.created_at || '');
+        const model = String(x.model || '').trim();
+        const head = [ts, model ? ('model: ' + model) : '', x.template_title ? ('tpl: ' + x.template_title) : '']
+          .filter(Boolean)
+          .join(' · ');
+        const ans = String(x.answer_text || '').trim();
+        if (!ans) return;
+        newMessages.push({ role: 'assistant', content: (head ? (head + '\n\n') : '') + ans });
+      });
+      messages = newMessages;
+      renderChat();
+      setStatus('История загружена', false);
+      window.setTimeout(() => setStatus('', false), 900);
+    }
+
+    if (historyBtn) {
+      historyBtn.addEventListener('click', async () => {
+        try {
+          await loadHistoryIntoChat();
+        } catch (e) {
+          setStatus(e.message || 'Ошибка истории', true);
+        }
+      });
+    }
+  })();
+</script>
+
+<style>
+  /* Align left column send button with chat bottom */
+  .ai-chat-left-col {
+    height: calc(100vh - 210px);
+    display: flex;
+    flex-direction: column;
+  }
+  .ai-chat-left-col .ai-chat-user-input {
+    flex: 1 1 auto;
+    min-height: 9rem;
+    resize: vertical;
+  }
+</style>
+

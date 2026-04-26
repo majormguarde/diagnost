@@ -1,0 +1,80 @@
+<div class="d-flex flex-column gap-4">
+  <div>
+    <div class="d-flex align-items-center justify-content-between gap-3 mb-2">
+      <h6 class="m-0 mono text-white"><i class="bi bi-calendar-event me-2"></i>ЗАЯВКИ</h6>
+      <span class="badge bg-secondary mono">{{ appointments|length }}</span>
+    </div>
+    {% if not appointments %}
+      <div class="text-secondary mono small">Нет заявок за этот день.</div>
+    {% else %}
+      <div class="table-responsive">
+        <table class="table table-dark table-hover table-sm align-middle mb-0 mono small">
+          <thead class="text-secondary border-secondary border-opacity-25">
+            <tr>
+              <th class="ps-3">ID</th>
+              <th>ВРЕМЯ</th>
+              <th>КЛИЕНТ</th>
+              <th>МАСТЕР</th>
+              <th>СТАТУС</th>
+              <th class="text-end pe-3"></th>
+            </tr>
+          </thead>
+          <tbody class="border-secondary border-opacity-10">
+            {% for a in appointments %}
+            <tr>
+              <td class="ps-3 text-info">№{{ a.id }}</td>
+              <td class="text-white text-nowrap">{{ a.visit_display_label() or (a.start_at.strftime('%d.%m %H:%M') if a.start_at else '-') }}</td>
+              <td class="text-white">{{ a.client.name if a.client else 'Клиент' }}</td>
+              <td class="text-white">{{ a.master.name if a.master else '—' }}</td>
+              <td class="text-white">{{ a.status }}</td>
+              <td class="text-end pe-3">
+                <a class="btn btn-sm btn-outline-info mono" href="{{ url_for('admin.appointment_detail', appointment_id=a.id) }}">Открыть</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="border-top border-secondary border-opacity-25 pt-3">
+    <div class="d-flex align-items-center justify-content-between gap-3 mb-2">
+      <h6 class="m-0 mono text-white"><i class="bi bi-receipt me-2"></i>ЗАКАЗ-НАРЯДЫ</h6>
+      <span class="badge bg-secondary mono">{{ work_orders|length }}</span>
+    </div>
+    {% if not work_orders %}
+      <div class="text-secondary mono small">Нет заказ-нарядов за этот день.</div>
+    {% else %}
+      <div class="table-responsive">
+        <table class="table table-dark table-hover table-sm align-middle mb-0 mono small">
+          <thead class="text-secondary border-secondary border-opacity-25">
+            <tr>
+              <th class="ps-3">ID</th>
+              <th>СОЗДАН</th>
+              <th>СТАТУС</th>
+              <th>КЛИЕНТ</th>
+              <th class="text-end">СУММА</th>
+              <th class="text-end pe-3"></th>
+            </tr>
+          </thead>
+          <tbody class="border-secondary border-opacity-10">
+            {% for o in work_orders %}
+            <tr>
+              <td class="ps-3 text-info">№{{ o.id }}</td>
+              <td class="text-white text-nowrap">{{ o.created_at.strftime('%d.%m %H:%M') if o.created_at else '-' }}</td>
+              <td class="text-white">{{ o.status }}</td>
+              <td class="text-white">{{ o.client.name if o.client else '—' }}</td>
+              <td class="text-end text-warning">{{ (o.total_amount or 0)|int }} ₽</td>
+              <td class="text-end pe-3">
+                <a class="btn btn-sm btn-outline-info mono" href="{{ url_for('admin.work_order_detail', order_id=o.id) }}">Открыть</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+</div>
+

@@ -1,6 +1,9 @@
 {% extends "admin/admin_base.html" %}
 {% block content %}
-<div id="dashboard-root" class="container-fluid py-4" data-refresh-url="{{ request.full_path if request.query_string else request.path }}" data-refresh-ms="10000">
+<div id="dashboard-root" class="container-fluid py-4"
+     data-refresh-url="{{ request.full_path if request.query_string else request.path }}"
+     data-refresh-ms="10000"
+     data-day-details-url="{{ url_for('admin.dashboard_day_details') }}">
   <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4 border-bottom border-secondary border-opacity-25 pb-3">
     <div>
       <span class="badge neon-border-blue text-white mono mb-2">SYSTEM_OVERVIEW.EXE</span>
@@ -169,13 +172,23 @@
           {% for week in wo_cal_weeks %}
           <div class="wo-cal-week">
             {% for cell in week %}
-            <div class="wo-cal-cell {% if not cell.in_month %}wo-cal-out{% elif cell.is_today %}wo-cal-today{% endif %} {% if cell.has_activity %}wo-cal-busy{% endif %}">
+            {% if cell.day and cell.in_month %}
+              {% set _cell_date = "%04d-%02d-%02d"|format(wo_cal_year, wo_cal_month, cell.day) %}
+            {% else %}
+              {% set _cell_date = "" %}
+            {% endif %}
+            <div class="wo-cal-cell {% if not cell.in_month %}wo-cal-out{% elif cell.is_today %}wo-cal-today{% endif %} {% if cell.has_activity %}wo-cal-busy{% endif %}"
+                 {% if _cell_date %}data-date="{{ _cell_date }}"{% endif %}
+                 {% if _cell_date %}role="button" tabindex="0" aria-label="Показать заказы за {{ _cell_date }}"{% endif %}>
               {% if cell.day %}
               <div class="wo-cal-daynum">{{ cell.day }}</div>
-              {% if cell.count %}
-              <div class="wo-cal-badge" title="Открытых нарядов, заведённых в этот день: {{ cell.count }}">{{ cell.count }}</div>
+              {% if cell.wo_count %}
+              <div class="wo-cal-badge" title="Открытых нарядов (created_at) за день: {{ cell.wo_count }}">{{ cell.wo_count }}</div>
               {% else %}
               <div class="wo-cal-empty"></div>
+              {% endif %}
+              {% if cell.appt_count %}
+              <div class="wo-cal-appt-badge" title="Заявок (created_at) за день: {{ cell.appt_count }}">{{ cell.appt_count }}</div>
               {% endif %}
               {% endif %}
             </div>
@@ -183,7 +196,7 @@
           </div>
           {% endfor %}
           <p class="text-secondary mono smaller mt-3 mb-0">
-            В ячейке — число заказ-нарядов в статусе «Открыт», у которых дата создания попадает в этот день. Сводка по всем открытым — справа.
+            В ячейке: жёлтое — открытые заказ-наряды (created_at), голубое — заявки во всех статусах (created_at). Клик по дню показывает списки.
           </p>
         </div>
       </div>
@@ -312,6 +325,26 @@
             </a>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Day details modal (outside auto-refresh root) -->
+<div class="modal fade" id="woDayModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
+    <div class="modal-content bg-dark neon-border-blue">
+      <div class="modal-header border-secondary border-opacity-25">
+        <h5 class="modal-title mono text-white" id="woDayModalTitle">ДЕНЬ</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-0">
+        <div id="woDayModalBody" class="p-4">
+          <div class="text-secondary mono small">Загрузка...</div>
+        </div>
+      </div>
+      <div class="modal-footer border-secondary border-opacity-25">
+        <button type="button" class="btn btn-outline-info mono" data-bs-dismiss="modal">Закрыть</button>
       </div>
     </div>
   </div>
@@ -490,6 +523,13 @@
     padding: 0.35rem 0.4rem;
     position: relative;
   }
+  .wo-cal-cell[data-date] {
+    cursor: pointer;
+  }
+  .wo-cal-cell[data-date]:hover {
+    border-color: rgba(13, 202, 240, 0.5);
+    background: rgba(13, 202, 240, 0.06);
+  }
   .wo-cal-cell.wo-cal-out {
     background: transparent;
     border-color: transparent;
@@ -515,6 +555,14 @@
     font-size: 1rem;
     font-weight: 700;
     color: #ffc107;
+    font-family: ui-monospace, monospace;
+    text-align: center;
+  }
+  .wo-cal-appt-badge {
+    margin-top: 0.15rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #0dcaf0;
     font-family: ui-monospace, monospace;
     text-align: center;
   }
@@ -561,6 +609,69 @@
     window.setInterval(refreshDashboard, refreshMs);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) refreshDashboard();
+    });
+  })();
+</script>
+
+<script>
+  (function () {
+    function getModal() {
+      const el = document.getElementById('woDayModal');
+      if (!el || !window.bootstrap) return null;
+      return bootstrap.Modal.getOrCreateInstance(el);
+    }
+
+    function fmtRu(iso) {
+      try {
+        const [y, m, d] = String(iso || '').split('-').map((x) => parseInt(x, 10));
+        if (!y || !m || !d) return iso;
+        return String(d).padStart(2, '0') + '.' + String(m).padStart(2, '0') + '.' + String(y);
+      } catch (e) {
+        return iso;
+      }
+    }
+
+    async function openDay(isoDate) {
+      const root = document.getElementById('dashboard-root');
+      if (!root) return;
+      const urlBase = root.dataset.dayDetailsUrl;
+      if (!urlBase) return;
+
+      const titleEl = document.getElementById('woDayModalTitle');
+      const bodyEl = document.getElementById('woDayModalBody');
+      if (titleEl) titleEl.textContent = 'ДЕНЬ: ' + fmtRu(isoDate);
+      if (bodyEl) bodyEl.innerHTML = '<div class="text-secondary mono small">Загрузка...</div>';
+
+      const modal = getModal();
+      if (modal) modal.show();
+
+      try {
+        const u = urlBase + '?date=' + encodeURIComponent(isoDate);
+        const r = await fetch(u, { credentials: 'same-origin', cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        const html = await r.text();
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        if (bodyEl) bodyEl.innerHTML = html;
+      } catch (e) {
+        if (bodyEl) bodyEl.innerHTML = '<div class="alert alert-warning mono small mb-0">Не удалось загрузить список за день.</div>';
+      }
+    }
+
+    document.addEventListener('click', (e) => {
+      const cell = e.target.closest && e.target.closest('.wo-cal-cell[data-date]');
+      if (!cell) return;
+      const iso = cell.getAttribute('data-date') || '';
+      if (!iso) return;
+      openDay(iso);
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const cell = e.target.closest && e.target.closest('.wo-cal-cell[data-date]');
+      if (!cell) return;
+      e.preventDefault();
+      const iso = cell.getAttribute('data-date') || '';
+      if (!iso) return;
+      openDay(iso);
     });
   })();
 </script>

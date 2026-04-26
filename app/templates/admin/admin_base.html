@@ -210,6 +210,32 @@
             </ul>
 
             <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-4 mb-2 text-secondary text-uppercase mono smaller">
+              <span>> ИИ</span>
+            </h6>
+            <ul class="nav flex-column mb-3">
+              <li class="nav-item">
+                <a class="nav-link mono small {% if request.endpoint == 'admin.ai_models' %}active neon-text-blue{% endif %}" href="{{ url_for('admin.ai_models') }}">
+                  <i class="bi bi-cpu me-2"></i>МОДЕЛИ_ИИ
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link mono small {% if request.endpoint == 'admin.ai_prompt_templates' %}active neon-text-blue{% endif %}" href="{{ url_for('admin.ai_prompt_templates') }}">
+                  <i class="bi bi-bookmarks me-2"></i>ШАБЛОНЫ_ПРОМПТОВ
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link mono small {% if request.endpoint == 'admin.ai_assistant' %}active neon-text-blue{% endif %}" href="{{ url_for('admin.ai_assistant') }}">
+                  <i class="bi bi-stars me-2"></i>ИИ-ПОМОЩНИК
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link mono small {% if request.endpoint == 'admin.ai_requests' %}active neon-text-blue{% endif %}" href="{{ url_for('admin.ai_requests') }}">
+                  <i class="bi bi-clock-history me-2"></i>ИИ_ЗАПРОСЫ
+                </a>
+              </li>
+            </ul>
+
+            <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-4 mb-2 text-secondary text-uppercase mono smaller">
               <span>> САЙТ</span>
             </h6>
             <ul class="nav flex-column mb-3">

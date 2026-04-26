@@ -266,6 +266,11 @@ def step1():
                 car_year=form.car_year.data or "",
                 car_number=form.car_number.data or "",
                 win_number=normalize_win_number(form.win_number.data),
+                engine_type=form.engine_type.data or "",
+                has_turbo=form.has_turbo.data or "",
+                engine_volume_l=form.engine_volume_l.data if form.engine_volume_l.data is not None else "",
+                transmission_type=form.transmission_type.data or "",
+                mileage_km=form.mileage_km.data if form.mileage_km.data is not None else "",
                 problem_description=form.problem_description.data,
             )
         )
@@ -285,6 +290,11 @@ def slots():
     car_year = request.args.get("car_year", "")
     car_number = request.args.get("car_number", "")
     win_number = request.args.get("win_number", "")
+    engine_type = request.args.get("engine_type", "")
+    has_turbo = request.args.get("has_turbo", "")
+    engine_volume_l = request.args.get("engine_volume_l", "")
+    transmission_type = request.args.get("transmission_type", "")
+    mileage_km = request.args.get("mileage_km", "")
     problem_description = request.args.get("problem_description", "")
 
     if not master_id or not date_str:
@@ -333,6 +343,11 @@ def slots():
         car_year=car_year,
         car_number=car_number,
         win_number=win_number,
+        engine_type=engine_type,
+        has_turbo=has_turbo,
+        engine_volume_l=engine_volume_l,
+        transmission_type=transmission_type,
+        mileage_km=mileage_km,
         problem_description=problem_description,
         total_duration=total_duration,
         slots_needed=needed,
@@ -353,6 +368,11 @@ def confirm():
     car_year = request.form.get("car_year", "")
     car_number = request.form.get("car_number", "")
     win_number = request.form.get("win_number", "")
+    engine_type = request.form.get("engine_type", "")
+    has_turbo = request.form.get("has_turbo", "")
+    engine_volume_l = request.form.get("engine_volume_l", "")
+    transmission_type = request.form.get("transmission_type", "")
+    mileage_km = request.form.get("mileage_km", "")
     problem_description = request.form.get("problem_description", "")
 
     if not master_id or not date_str:
@@ -429,6 +449,11 @@ def confirm():
         car_number=car_number,
         win_number=normalize_win_number(win_number) or None,
         problem_description=problem_description,
+        engine_type=(engine_type or None) or None,
+        has_turbo=(True if has_turbo == "yes" else False if has_turbo == "no" else None),
+        engine_volume_l=(float(engine_volume_l) if str(engine_volume_l).strip() else None),
+        transmission_type=(transmission_type or None) or None,
+        mileage_km=(int(mileage_km) if str(mileage_km).strip().isdigit() else None),
     )
 
     for slot in selected_seq:

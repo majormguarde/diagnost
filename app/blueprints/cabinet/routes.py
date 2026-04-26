@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import json
 from secrets import token_urlsafe
 import os
 import smtplib
@@ -25,6 +26,7 @@ from ...models import (
     WorkOrder,
     WorkOrderDocument,
     TelegramLink,
+    AppointmentAiQuestion,
 )
 from ...telegram_bot import (
     build_zakaz_delivery_message,
@@ -404,6 +406,31 @@ def appointments_status_json():
     out = []
     for appt in rows:
         label, badge = _cabinet_appt_badge(appt.status)
+        parts: list[str] = []
+        if appt.engine_type == "petrol":
+            parts.append("бензин")
+        elif appt.engine_type == "diesel":
+            parts.append("дизель")
+        if appt.has_turbo is True:
+            parts.append("турбо: да")
+        elif appt.has_turbo is False:
+            parts.append("турбо: нет")
+        if appt.engine_volume_l:
+            try:
+                parts.append(f"{float(appt.engine_volume_l):.1f} л")
+            except (TypeError, ValueError):
+                pass
+        if appt.transmission_type:
+            tr_map = {
+                "manual": "механика",
+                "auto": "автомат",
+                "robot": "робот",
+                "cvt": "вариатор",
+                "other": "другое",
+            }
+            parts.append(f"кпп: {tr_map.get(appt.transmission_type, appt.transmission_type)}")
+        if appt.mileage_km is not None:
+            parts.append(f"пробег: {int(appt.mileage_km)} км")
         out.append(
             {
                 "id": int(appt.id),
@@ -412,6 +439,7 @@ def appointments_status_json():
                 "badge_class": badge,
                 "list_time_label": _cabinet_list_time_label(appt),
                 "visit_lines": appt.visit_display_lines(),
+                "vehicle_summary": " · ".join([p for p in parts if p]),
             }
         )
     return jsonify({"ok": True, "appointments": out})
@@ -492,6 +520,26 @@ def appointment_snapshot_json(appointment_id: int):
             "visit_label": visit_label,
             "visit_lines": visit_lines,
             "win_number": appointment.win_number or "",
+            "vehicle": {
+                "engine_type": appointment.engine_type or "",
+                "has_turbo": bool(appointment.has_turbo) if appointment.has_turbo is not None else None,
+                "engine_volume_l": float(appointment.engine_volume_l) if appointment.engine_volume_l is not None else None,
+                "transmission_type": appointment.transmission_type or "",
+                "mileage_km": int(appointment.mileage_km) if appointment.mileage_km is not None else None,
+            },
+            "ai_questions": [
+                {
+                    "id": int(q.id),
+                    "question": q.question,
+                    "options": json.loads(q.options_json or "[]"),
+                    "answer": q.client_answer or "",
+                }
+                for q in db.session.execute(
+                    select(AppointmentAiQuestion)
+                    .where(AppointmentAiQuestion.appointment_id == appointment.id)
+                    .order_by(AppointmentAiQuestion.id.asc())
+                ).scalars().all()
+            ],
         }
     )
 
@@ -511,6 +559,104 @@ def appointment_win_update_json(appointment_id: int):
     appointment.win_number = s or None
     db.session.commit()
     return jsonify({"ok": True, "win_number": appointment.win_number or ""})
+
+
+@bp.post("/appointments/<int:appointment_id>/ai-questions/answer-json")
+@login_required
+def appointment_ai_questions_answer_json(appointment_id: int):
+    appointment = db.session.get(Appointment, appointment_id)
+    if not appointment or appointment.client_user_id != current_user.id:
+        return jsonify({"ok": False, "message": "Заявка не найдена."}), 404
+
+    payload = request.get_json(silent=True) or {}
+    answers = payload.get("answers") or []
+    if not isinstance(answers, list):
+        return jsonify({"ok": False, "message": "Некорректные данные."}), 400
+
+    by_id = {int(x.get("id")): str(x.get("answer") or "").strip() for x in answers if isinstance(x, dict) and str(x.get("id") or "").isdigit()}
+    if not by_id:
+        return jsonify({"ok": False, "message": "Нет ответов."}), 400
+
+    rows = db.session.execute(
+        select(AppointmentAiQuestion).where(
+            AppointmentAiQuestion.appointment_id == appointment.id,
+            AppointmentAiQuestion.id.in_(list(by_id.keys())),
+        )
+    ).scalars().all()
+    now = datetime.utcnow()
+    updated = 0
+    for q in rows:
+        ans = by_id.get(int(q.id), "")
+        if ans:
+            q.client_answer = ans[:500]
+            q.answered_at = now
+            updated += 1
+    db.session.commit()
+    return jsonify({"ok": True, "updated": updated})
+
+
+@bp.post("/appointments/<int:appointment_id>/vehicle/update-json")
+@login_required
+def appointment_vehicle_update_json(appointment_id: int):
+    appointment = db.session.get(Appointment, appointment_id)
+    if not appointment or appointment.client_user_id != current_user.id:
+        return jsonify({"ok": False, "message": "Заявка не найдена."}), 404
+
+    payload = request.get_json(silent=True) or {}
+    engine_type = str(payload.get("engine_type") or "").strip().lower()
+    if engine_type not in ("", "petrol", "diesel"):
+        return jsonify({"ok": False, "message": "Некорректный тип двигателя."}), 400
+    turbo = payload.get("has_turbo")
+    if turbo is True:
+        has_turbo = True
+    elif turbo is False:
+        has_turbo = False
+    else:
+        has_turbo = None
+    transmission_type = str(payload.get("transmission_type") or "").strip().lower()
+    if transmission_type not in ("", "manual", "auto", "robot", "cvt", "other"):
+        return jsonify({"ok": False, "message": "Некорректный тип КПП."}), 400
+
+    def _float_or_none(x):
+        s = str(x or "").strip().replace(",", ".")
+        if not s:
+            return None
+        try:
+            return float(s)
+        except ValueError:
+            return None
+
+    def _int_or_none(x):
+        s = str(x or "").strip()
+        if not s:
+            return None
+        try:
+            return int(float(s))
+        except ValueError:
+            return None
+
+    engine_volume_l = _float_or_none(payload.get("engine_volume_l"))
+    mileage_km = _int_or_none(payload.get("mileage_km"))
+
+    appointment.engine_type = engine_type or None
+    appointment.has_turbo = has_turbo
+    appointment.engine_volume_l = engine_volume_l
+    appointment.transmission_type = transmission_type or None
+    appointment.mileage_km = mileage_km
+    db.session.commit()
+
+    return jsonify(
+        {
+            "ok": True,
+            "vehicle": {
+                "engine_type": appointment.engine_type or "",
+                "has_turbo": bool(appointment.has_turbo) if appointment.has_turbo is not None else None,
+                "engine_volume_l": float(appointment.engine_volume_l) if appointment.engine_volume_l is not None else None,
+                "transmission_type": appointment.transmission_type or "",
+                "mileage_km": int(appointment.mileage_km) if appointment.mileage_km is not None else None,
+            },
+        }
+    )
 
 
 @bp.post("/appointments/<int:appointment_id>/problems/update-json")

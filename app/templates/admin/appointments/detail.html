@@ -113,6 +113,26 @@
                         <label class="form-label mono text-secondary small">> WIN_НОМЕР</label>
                         {{ form.win_number(class="form-control bg-dark text-white border-secondary border-opacity-50 mono js-win-number-input", placeholder="0–9, A–Z", title="Только цифры и латинские буквы A–Z", pattern="[A-Z0-9]*", maxlength="32", autocomplete="off") }}
                       </div>
+                      <div class="col-md-6 mb-3">
+                        <label class="form-label mono text-secondary small">> ТИП_ДВИГАТЕЛЯ</label>
+                        {{ form.engine_type(class="form-select bg-dark text-white border-secondary border-opacity-50 mono", style="color-scheme: dark;") }}
+                      </div>
+                      <div class="col-md-6 mb-3">
+                        <label class="form-label mono text-secondary small">> ТУРБИНА</label>
+                        {{ form.has_turbo(class="form-select bg-dark text-white border-secondary border-opacity-50 mono", style="color-scheme: dark;") }}
+                      </div>
+                      <div class="col-md-6 mb-3">
+                        <label class="form-label mono text-secondary small">> ОБЪЕМ_ДВИГАТЕЛЯ_Л</label>
+                        {{ form.engine_volume_l(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="2.0", inputmode="decimal") }}
+                      </div>
+                      <div class="col-md-6 mb-3">
+                        <label class="form-label mono text-secondary small">> ТИП_КПП</label>
+                        {{ form.transmission_type(class="form-select bg-dark text-white border-secondary border-opacity-50 mono", style="color-scheme: dark;") }}
+                      </div>
+                      <div class="col-md-6 mb-3">
+                        <label class="form-label mono text-secondary small">> ПРОБЕГ_КМ</label>
+                        {{ form.mileage_km(class="form-control bg-dark text-white border-secondary border-opacity-50 mono", placeholder="150000", inputmode="numeric") }}
+                      </div>
                     </div>
                   </div>
                   <div class="border-top border-secondary border-opacity-25 p-4 bg-dark bg-opacity-25">
@@ -130,9 +150,14 @@
 
         <div class="card bg-dark neon-border-blue shadow-lg mb-4">
           <div class="card-header bg-transparent border-secondary border-opacity-25 py-3">
-            <h5 class="card-title m-0 mono text-white">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+              <h5 class="card-title m-0 mono text-white">
               <i class="bi bi-clipboard2-pulse me-2"></i>ОПИСАНИЯ НЕИСПРАВНОСТЕЙ
-            </h5>
+              </h5>
+              <button type="button" class="btn btn-sm btn-outline-info mono" data-bs-toggle="modal" data-bs-target="#aiChatModal">
+                <i class="bi bi-stars me-1"></i>ИИ_АНАЛИЗ
+              </button>
+            </div>
           </div>
           <div class="card-body">
             {{ form.problem_description(class="form-control bg-dark text-white border-secondary border-opacity-50 mono d-none", rows=4) }}
@@ -617,6 +642,37 @@
                 <button type="submit" class="btn btn-outline-warning w-100 mono">СОЗДАТЬ_И_ДОБАВИТЬ.EXE</button>
               </div>
             </form>
+
+      {% if ai_questions %}
+      <div class="card bg-dark neon-border-blue shadow-lg mb-4">
+        <div class="card-header bg-transparent border-secondary border-opacity-25 py-3">
+          <h5 class="card-title m-0 mono text-white">
+            <i class="bi bi-question-circle me-2"></i>УТОЧНЯЮЩИЕ_ВОПРОСЫ (ОТ КЛИЕНТА)
+          </h5>
+        </div>
+        <div class="card-body p-4">
+          {% for q in ai_questions %}
+          {% set opts = q.options %}
+          <div class="p-3 rounded border border-secondary border-opacity-25 bg-dark bg-opacity-50 mb-3">
+            <div class="mono small text-secondary mb-2">{{ loop.index }}) {{ q.question }}</div>
+            {% if opts %}
+              {% for opt in opts %}
+              <div class="form-check">
+                <input class="form-check-input" type="radio" disabled {% if q.client_answer == opt %}checked{% endif %}>
+                <label class="form-check-label mono small {% if q.client_answer == opt %}text-success{% else %}text-white{% endif %}">{{ opt }}</label>
+              </div>
+              {% endfor %}
+            {% endif %}
+            {% if q.client_answer %}
+              <div class="mt-2 mono small text-success">ОТВЕТ: {{ q.client_answer }}</div>
+            {% else %}
+              <div class="mt-2 mono small text-warning">ОТВЕТА НЕТ</div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
           </div>
         </div>
       </div>
@@ -635,6 +691,79 @@
         if (v !== el.value) el.value = v;
       });
     });
+  })();
+</script>
+
+{% set modal_id = "aiChatModal" %}
+{% set title = "ИИ_АНАЛИЗ_ЗАЯВКИ" %}
+{% set api_url = url_for('admin.appointment_ai_analyze_json', appointment_id=appointment.id) %}
+{% set save_url = url_for('admin.appointment_ai_chat_save_md_json', appointment_id=appointment.id) %}
+{% set csrf_token_value = csrf_token() %}
+{% set _pts_json = (prompt_templates_json or [])|tojson %}
+{% set ai_kind = "appointment" %}
+{% set ai_object_id = appointment.id %}
+{% include "admin/_ai_chat_modal.html" %}
+
+<script>
+  (function () {
+    // Auto-sync vehicle fields without F5
+    const snapshotUrl = {{ url_for('admin.appointment_snapshot_json', appointment_id=appointment.id)|tojson }};
+    const pollMs = 5000;
+    let timer = null;
+
+    function stop() {
+      if (timer) clearInterval(timer);
+      timer = null;
+    }
+    function start() {
+      if (timer) clearInterval(timer);
+      timer = setInterval(sync, pollMs);
+    }
+
+    function setIfNotFocused(el, val) {
+      if (!el) return;
+      if (document.activeElement === el) return;
+      if (el.tagName === 'SELECT') el.value = (val == null) ? '' : String(val);
+      else el.value = (val == null) ? '' : String(val);
+    }
+
+    async function sync() {
+      try {
+        const r = await fetch(snapshotUrl, { credentials: 'same-origin', cache: 'no-store' });
+        const d = await r.json().catch(() => null);
+        if (!r.ok || !d || !d.ok) return;
+
+        setIfNotFocused(document.getElementById('car_make'), d.car_make);
+        setIfNotFocused(document.getElementById('car_model'), d.car_model);
+        setIfNotFocused(document.getElementById('car_year'), d.car_year != null ? String(d.car_year) : '');
+        setIfNotFocused(document.getElementById('car_number'), d.car_number);
+        setIfNotFocused(document.getElementById('win_number'), d.win_number);
+        setIfNotFocused(document.getElementById('engine_type'), d.engine_type);
+        const turboSel = document.getElementById('has_turbo');
+        if (turboSel && document.activeElement !== turboSel) {
+          const hv = d.has_turbo;
+          turboSel.value = (hv === true) ? 'yes' : ((hv === false) ? 'no' : '');
+        }
+        setIfNotFocused(document.getElementById('engine_volume_l'), d.engine_volume_l != null ? String(d.engine_volume_l) : '');
+        setIfNotFocused(document.getElementById('transmission_type'), d.transmission_type);
+        setIfNotFocused(document.getElementById('mileage_km'), d.mileage_km != null ? String(d.mileage_km) : '');
+      } catch (e) {}
+    }
+
+    function forceSync() {
+      sync();
+      if (!timer) start();
+    }
+
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) stop();
+      else forceSync();
+    });
+    window.addEventListener('focus', forceSync);
+    window.addEventListener('pageshow', forceSync);
+
+    start();
+    sync();
   })();
 </script>
 
@@ -1912,6 +2041,8 @@
     startClientDecisionsPolling();
   })();
 </script>
+
+{# shared AI modal inserted above #}
 
 <!-- Delete Confirmation Modal -->
 <div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">

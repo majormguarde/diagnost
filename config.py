@@ -29,3 +29,8 @@ class Config:
     TELEGRAM_BOT_NAME = (os.environ.get("TELEGRAM_BOT_NAME") or "AutoDiagBot").strip().lstrip("@")
     # polling — фоновый getUpdates при старте приложения; webhook — только POST /telegram/webhook
     TELEGRAM_UPDATES_MODE = (os.environ.get("TELEGRAM_UPDATES_MODE") or "polling").strip().lower()
+
+    # AI integration (admin-only helpers). If key is empty, AI features will be disabled.
+    OPENAI_API_KEY = (os.environ.get("OPENAI_API_KEY") or "").strip()
+    OPENAI_MODEL = (os.environ.get("OPENAI_MODEL") or "gpt-4o-mini").strip()
+    OPENAI_BASE_URL = (os.environ.get("OPENAI_BASE_URL") or "https://api.openai.com/v1").strip().rstrip("/")
